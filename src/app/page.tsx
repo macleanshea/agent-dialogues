@@ -15,12 +15,7 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Experiments</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Each run is its own experiment for now. Click a row to open its run.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">Experiments</h1>
 
       {rows.length === 0 ? (
         <Card className="flex flex-col items-center gap-3 px-6 py-12 text-center">

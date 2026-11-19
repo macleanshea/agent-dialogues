@@ -261,7 +261,7 @@ IDs and pages
 - The run form has an optional Name field, which becomes the experiment name. If blank, the name is built from the models and turn count.
 
 Run form
-- Effort choices are low, medium, high, xhigh, and max (default medium).
+- Effort choices are shown as Low, Medium, High, Extra, and Max (default Medium). "Extra" is the API's "xhigh". The API values are what is sent and stored.
 - Limits the spec did not set: concurrency 1 to 16; max tokens per message 1 to 128,000; cost ceiling above 0 and at most $10,000.
 - In PR 1 the real models appear in the agent model lists but cannot be selected, and the server rejects them. The summarizer and report model choices are stored but not used yet.
 - When sign-off is on and a system prompt is blank, the sign-off line alone becomes that agent's system prompt.
@@ -289,5 +289,6 @@ Conversation engine
 
 Models and prices (checked 2026-11-19 against the models overview and pricing pages)
 - Per million tokens, input / 5-minute cache write / 1-hour cache write / cache read / output: Opus 5.5 $4 / $5 / $8 / $0.20 / $20. Sonnet 5.5 $2 / $2.50 / $4 / $0.10 / $10. Haiku 5.5 $0.10 / $0.125 / $0.20 / $0.01 / $0.50 for prompts up to 100,000 tokens, and $0.50 / $0.625 / $1 / $0.05 / $2.50 above that.
+- Claude Fable 5.2 (claude-fable-5-2) is added to the model list at the user's request, beyond the three IDs the spec names: $8 / $10 / $16 / $0.20 / $40. Its default effort on the API is high, but the form's default stays Medium for every model.
 - Cost uses the 5-minute cache-write rate.
 - The Vercel project was created while the repo was empty, so Vercel did not detect Next.js and treated the app as a static site. `vercel.json` now sets the framework to Next.js, so the setting lives in the repo instead of the dashboard.

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { SIGN_OFF_LINE, type RunConfigSnapshot } from "@/lib/config";
-import { modelLabel } from "@/lib/models";
+import { EFFORT_LABELS, modelLabel } from "@/lib/models";
 import { formatUsd } from "@/lib/utils";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -28,7 +28,7 @@ export function RunConfigView({ config }: { config: RunConfigSnapshot }) {
           <Row label="Model">
             {modelLabel(c.agentA.model)} <span className="font-mono text-xs text-muted-foreground">({c.agentA.model})</span>
           </Row>
-          <Row label="Effort">{c.agentA.effort}</Row>
+          <Row label="Effort">{EFFORT_LABELS[c.agentA.effort]}</Row>
           <Row label="System prompt sent">
             <Prompt text={c.resolved.systemPromptA} />
           </Row>
@@ -40,7 +40,7 @@ export function RunConfigView({ config }: { config: RunConfigSnapshot }) {
           <Row label="Model">
             {modelLabel(c.agentB.model)} <span className="font-mono text-xs text-muted-foreground">({c.agentB.model})</span>
           </Row>
-          <Row label="Effort">{c.agentB.effort}</Row>
+          <Row label="Effort">{EFFORT_LABELS[c.agentB.effort]}</Row>
           <Row label="System prompt sent">
             {c.agentB.sameAsA && <p className="mb-1 text-xs text-muted-foreground">Same as A</p>}
             <Prompt text={c.resolved.systemPromptB} />

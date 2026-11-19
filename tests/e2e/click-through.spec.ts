@@ -19,6 +19,10 @@ test("empty list, then a mock run from the form through to a transcript", async 
 
   // Real models are listed but not selectable yet.
   await expect(page.locator("#a-model option[value='claude-opus-5-5']")).toBeDisabled();
+  await expect(page.locator("#a-model option[value='claude-fable-5-2']")).toBeDisabled();
+
+  // Effort levels are capitalized, and xhigh shows as Extra.
+  await expect(page.locator("#a-effort option")).toHaveText(["Low", "Medium", "High", "Extra", "Max"]);
 
   // Editing the opening message enables the attribution toggle.
   await page.getByLabel("Opening message to A").fill("Hello there.");

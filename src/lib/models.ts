@@ -15,6 +15,15 @@ export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh", "max"];
 export const DEFAULT_EFFORT: Effort = "medium";
 
+/** How each effort level is shown. The API values above are what is sent and stored. */
+export const EFFORT_LABELS: Record<Effort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra",
+  max: "Max",
+};
+
 export interface PriceTable {
   input: number;
   cacheWrite5m: number;
@@ -42,6 +51,13 @@ const FREE: PriceTable = { input: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead
 
 export const MODELS: ModelInfo[] = [
   { id: MOCK_MODEL_ID, label: "Mock (no cost)", kind: "mock", price: FREE, agentReady: true },
+  {
+    id: "claude-fable-5-2",
+    label: "Claude Fable 5.2",
+    kind: "anthropic",
+    price: { input: 8, cacheWrite5m: 10, cacheWrite1h: 16, cacheRead: 0.2, output: 40 },
+    agentReady: false,
+  },
   {
     id: "claude-opus-5-5",
     label: "Claude Opus 5.5",

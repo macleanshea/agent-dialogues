@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { citation, conversationId, experimentId, parseIndex, runId, turnHref, turnId } from "@/lib/ids";
-import { MODELS, costUsd, getModel } from "@/lib/models";
+import { EFFORTS, EFFORT_LABELS, MODELS, costUsd, getModel } from "@/lib/models";
 import {
   OPENING_STUB,
   SIGN_OFF_LINE,
@@ -31,7 +31,13 @@ describe("display IDs", () => {
 
 describe("models and prices", () => {
   it("lists the spec's model IDs and the mock", () => {
-    expect(MODELS.map((m) => m.id)).toEqual(["mock", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+    expect(MODELS.map((m) => m.id)).toEqual([
+      "mock",
+      "claude-fable-5-2",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+    ]);
     expect(getModel("mock")?.label).toBe("Mock (no cost)");
   });
   it("prices a call", () => {
@@ -39,6 +45,8 @@ describe("models and prices", () => {
     // 4 input + 20 output + 0.20 cache read + 5 cache write
     expect(costUsd("claude-opus-5-5", usage)).toBeCloseTo(29.2, 6);
     expect(costUsd("mock", usage)).toBe(0);
+    // 8 input + 40 output + 0.20 cache read + 10 cache write
+    expect(costUsd("claude-fable-5-2", usage)).toBeCloseTo(58.2, 6);
   });
   it("uses Haiku's long-context prices above 100k prompt tokens", () => {
     const short = { inputTokens: 100_000, outputTokens: 0, thinkingTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
@@ -49,6 +57,10 @@ describe("models and prices", () => {
 });
 
 describe("run config", () => {
+  it("shows effort levels capitalized, with xhigh as Extra", () => {
+    expect(EFFORTS.map((e) => EFFORT_LABELS[e])).toEqual(["Low", "Medium", "High", "Extra", "Max"]);
+  });
+
   it("has the spec's defaults", () => {
     const c = defaultRunConfig();
     expect(c.agentA.effort).toBe("medium");

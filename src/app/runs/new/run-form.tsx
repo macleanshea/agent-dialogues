@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea, Toggle } from "@/components/ui/form";
 import { LIMITS, OPENING_STUB, SIGN_OFF_LINE, type RunConfig } from "@/lib/config";
-import { EFFORTS, MODELS } from "@/lib/models";
+import { EFFORTS, EFFORT_LABELS, MODELS } from "@/lib/models";
 import { createRunAction, type RunFormState } from "./actions";
 
 /** Number inputs hold text while the user types; the server validates them. */
@@ -77,7 +77,9 @@ export function RunForm({ initial }: { initial: RunConfig }) {
                 onChange={(e) => setA({ effort: e.target.value as RunConfig["agentA"]["effort"] })}
               >
                 {EFFORTS.map((e) => (
-                  <option key={e}>{e}</option>
+                  <option key={e} value={e}>
+                    {EFFORT_LABELS[e]}
+                  </option>
                 ))}
               </Select>
             </Field>
@@ -111,7 +113,9 @@ export function RunForm({ initial }: { initial: RunConfig }) {
                 onChange={(e) => setB({ effort: e.target.value as RunConfig["agentB"]["effort"] })}
               >
                 {EFFORTS.map((e) => (
-                  <option key={e}>{e}</option>
+                  <option key={e} value={e}>
+                    {EFFORT_LABELS[e]}
+                  </option>
                 ))}
               </Select>
             </Field>

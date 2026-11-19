@@ -290,3 +290,4 @@ Conversation engine
 Models and prices (checked 2026-11-19 against the models overview and pricing pages)
 - Per million tokens, input / 5-minute cache write / 1-hour cache write / cache read / output: Opus 5.5 $4 / $5 / $8 / $0.20 / $20. Sonnet 5.5 $2 / $2.50 / $4 / $0.10 / $10. Haiku 5.5 $0.10 / $0.125 / $0.20 / $0.01 / $0.50 for prompts up to 100,000 tokens, and $0.50 / $0.625 / $1 / $0.05 / $2.50 above that.
 - Cost uses the 5-minute cache-write rate.
+- The Vercel project was created while the repo was empty, so Vercel did not detect Next.js and treated the app as a static site. `vercel.json` now sets the framework to Next.js, so the setting lives in the repo instead of the dashboard.

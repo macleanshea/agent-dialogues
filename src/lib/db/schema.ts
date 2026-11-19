@@ -1,0 +1,187 @@
+import { sql } from "drizzle-orm";
+import {
+  boolean,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
+import type { RunConfigSnapshot } from "../config";
+import type {
+  ApiStopReason,
+  ContentBlock,
+  ConversationStatus,
+  ConversationStopReason,
+  Speaker,
+} from "../engine/types";
+import type { FieldGroup, FieldOptions, FieldScope, FieldType, PresetKey } from "../fields/library";
+
+export type RunStatus = "draft" | "queued" | "running" | "done" | "failed" | "stopped";
+
+const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull().defaultNow();
+
+/** Experiment > Run > Conversation > Turn. */
+export const experiments = pgTable("experiments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Shown as EXP-004. */
+  number: serial("number").notNull().unique(),
+  /** Placeholder for future accounts. */
+  ownerId: text("owner_id").notNull().default("owner"),
+  name: text("name").notNull(),
+  analysisFocus: text("analysis_focus").notNull().default(""),
+  /** Which settings may vary between runs. Empty for a standalone run. */
+  declaredVariables: jsonb("declared_variables").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  /** The baseline settings shared by every run. */
+  sharedSettings: jsonb("shared_settings").$type<RunConfigSnapshot | null>(),
+  locked: boolean("locked").notNull().default(false),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const runs = pgTable(
+  "runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    experimentId: uuid("experiment_id")
+      .notNull()
+      .references(() => experiments.id, { onDelete: "cascade" }),
+    /** Shown as R2. R1 is the baseline. */
+    number: integer("number").notNull(),
+    /** A full copy of the settings, not a reference. */
+    config: jsonb("config").$type<RunConfigSnapshot>().notNull(),
+    modelA: text("model_a").notNull(),
+    modelB: text("model_b").notNull(),
+    /** Settings that differ from the baseline (R1). Empty for R1. */
+    configDiff: jsonb("config_diff").$type<Record<string, { baseline: unknown; value: unknown }>>().notNull().default(sql`'{}'::jsonb`),
+    status: text("status").$type<RunStatus>().notNull().default("draft"),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    error: text("error"),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("runs_experiment_number_uq").on(t.experimentId, t.number)],
+);
+
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    /** Shown as C07. */
+    index: integer("index").notNull(),
+    status: text("status").$type<ConversationStatus>().notNull().default("pending"),
+    stopReason: text("stop_reason").$type<ConversationStopReason>(),
+    error: text("error"),
+    turnsCompleted: integer("turns_completed").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    thinkingTokens: integer("thinking_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    /** First turn where repetition crossed the threshold (PR 2). */
+    repetitionFlagTurn: integer("repetition_flag_turn"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("conversations_run_index_uq").on(t.runId, t.index)],
+);
+
+export const turns = pgTable(
+  "turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    /** Shown as T12. A speaks on odd turns. */
+    turnNumber: integer("turn_number").notNull(),
+    speaker: text("speaker").$type<Speaker>().notNull(),
+    model: text("model").notNull(),
+    /** Visible text: the text blocks joined. */
+    text: text("text").notNull(),
+    thinkingSummary: text("thinking_summary"),
+    /** The content blocks exactly as returned. */
+    content: jsonb("content").$type<ContentBlock[]>().notNull(),
+    stopReason: text("stop_reason").$type<ApiStopReason>().notNull(),
+    /** The usage object exactly as returned. */
+    usage: jsonb("usage"),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    thinkingTokens: integer("thinking_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    costUsd: doublePrecision("cost_usd").notNull().default(0),
+    truncated: boolean("truncated").notNull().default(false),
+    placeholderUsed: boolean("placeholder_used").notNull().default(false),
+    attempts: integer("attempts").notNull().default(1),
+    maxTokensUsed: integer("max_tokens_used").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("turns_conversation_turn_uq").on(t.conversationId, t.turnNumber)],
+);
+
+/** Built-in and custom fields, treated identically. */
+export const fieldDefinitions = pgTable("field_definitions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  type: text("type").$type<FieldType>().notNull(),
+  scope: text("scope").$type<FieldScope>().notNull(),
+  options: jsonb("options").$type<FieldOptions>().notNull().default(sql`'{}'::jsonb`),
+  definition: text("definition").notNull(),
+  builtin: boolean("builtin").notNull().default(false),
+  /** Picker group. Custom fields may use any group. */
+  group: text("group").$type<FieldGroup | string>().notNull(),
+  presets: jsonb("presets").$type<PresetKey[]>().notNull().default(sql`'[]'::jsonb`),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export interface FieldDefinitionSnapshot {
+  id: string;
+  name: string;
+  type: FieldType;
+  scope: FieldScope;
+  options: FieldOptions;
+  definition: string;
+}
+
+/**
+ * Codings and reports (PR 3) are keyed to an analysis version, so the same
+ * transcripts can be re-analyzed without re-running them.
+ */
+export const analysisVersions = pgTable(
+  "analysis_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    experimentId: uuid("experiment_id")
+      .notNull()
+      .references(() => experiments.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    focus: text("focus").notNull().default(""),
+    /** Copies of the selected field definitions at the time of creation. */
+    fieldDefinitions: jsonb("field_definitions").$type<FieldDefinitionSnapshot[]>().notNull().default(sql`'[]'::jsonb`),
+    summarizerModel: text("summarizer_model").notNull(),
+    reportModel: text("report_model").notNull(),
+    judgeReadsThinking: boolean("judge_reads_thinking").notNull().default(false),
+    promptVersions: jsonb("prompt_versions").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("analysis_versions_experiment_version_uq").on(t.experimentId, t.version),
+    index("analysis_versions_experiment_idx").on(t.experimentId),
+  ],
+);

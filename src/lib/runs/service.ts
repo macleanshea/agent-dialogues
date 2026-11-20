@@ -3,7 +3,8 @@ import { defaultExperimentName, snapshotConfig, type RunConfig } from "../config
 import type { Db } from "../db";
 import { analysisVersions, conversations, experiments, runs, turns, type RunStatus } from "../db/schema";
 
-export const PROMPT_VERSIONS = { summarizer: "v1", runReport: "v1", comparisonReport: "v1" };
+import { PROMPT_VERSIONS } from "../analysis/prompts";
+import { snapshotFields } from "../analysis/service";
 
 export interface CreatedRun {
   experimentId: string;
@@ -19,6 +20,8 @@ export interface CreatedRun {
  */
 export async function createStandaloneRun(db: Db, config: RunConfig): Promise<CreatedRun> {
   const snapshot = snapshotConfig(config);
+  // Copies the selected field definitions now, so later edits to the library never change this analysis.
+  const fields = await snapshotFields(db, config.fields);
   return db.transaction(async (tx) => {
     const [exp] = await tx
       .insert(experiments)
@@ -34,12 +37,11 @@ export async function createStandaloneRun(db: Db, config: RunConfig): Promise<Cr
       experimentId: exp.id,
       version: 1,
       focus: config.analysisFocus,
-      // The field picker arrives in PR 3; until then no fields are selected.
-      fieldDefinitions: [],
+      fieldDefinitions: fields,
       summarizerModel: config.summarizerModel,
       reportModel: config.reportModel,
       judgeReadsThinking: config.judgeReadsThinking,
-      promptVersions: PROMPT_VERSIONS,
+      promptVersions: { ...PROMPT_VERSIONS },
     });
 
     const [run] = await tx

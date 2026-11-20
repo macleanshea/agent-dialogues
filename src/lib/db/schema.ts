@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { RunConfigSnapshot } from "../config";
 import type {
+  AgentMessage,
   ApiStopReason,
   ContentBlock,
   ConversationStatus,
@@ -21,6 +22,8 @@ import type {
   Speaker,
 } from "../engine/types";
 import type { FieldGroup, FieldOptions, FieldScope, FieldType, PresetKey } from "../fields/library";
+import type { CodingOutput } from "../analysis/fields";
+import type { CitationCheckResult } from "../analysis/citations";
 
 export type RunStatus = "draft" | "queued" | "running" | "done" | "failed" | "stopped";
 
@@ -136,6 +139,10 @@ export const turns = pgTable(
     repetition: doublePrecision("repetition"),
     /** The message ended with [END] on its own line while sign-off was on. */
     signedOff: boolean("signed_off").notNull().default(false),
+    /** Computed measures (PR 3). Null on turns saved before PR 3 until backfilled. */
+    crossSimilarity: doublePrecision("cross_similarity"),
+    emojiCount: integer("emoji_count"),
+    modelMentions: jsonb("model_mentions").$type<string[]>(),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("turns_conversation_turn_uq").on(t.conversationId, t.turnNumber)],
@@ -165,6 +172,8 @@ export interface FieldDefinitionSnapshot {
   scope: FieldScope;
   options: FieldOptions;
   definition: string;
+  /** False for custom fields. Missing on snapshots made before custom fields could be deleted. */
+  builtin?: boolean;
 }
 
 /**
@@ -192,4 +201,82 @@ export const analysisVersions = pgTable(
     uniqueIndex("analysis_versions_experiment_version_uq").on(t.experimentId, t.version),
     index("analysis_versions_experiment_idx").on(t.experimentId),
   ],
+);
+
+export type AnalysisStatus = "pending" | "running" | "done" | "errored";
+
+const tokenColumns = () => ({
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  thinkingTokens: integer("thinking_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+  costUsd: doublePrecision("cost_usd").notNull().default(0),
+});
+
+/** One summarizer coding of one conversation, under one analysis version. */
+export const codings = pgTable(
+  "codings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    analysisVersionId: uuid("analysis_version_id")
+      .notNull()
+      .references(() => analysisVersions.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    status: text("status").$type<AnalysisStatus>().notNull().default("pending"),
+    model: text("model").notNull(),
+    /** The coding as stored: summary, focus findings, notable, and one value per field. */
+    output: jsonb("output").$type<CodingOutput>(),
+    /** The JSON exactly as the model returned it. */
+    rawOutput: jsonb("raw_output"),
+    error: text("error"),
+    ...tokenColumns(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("codings_version_conversation_uq").on(t.analysisVersionId, t.conversationId),
+    index("codings_conversation_idx").on(t.conversationId),
+  ],
+);
+
+/** A transcript the report writer opened. */
+export interface OpenedTranscript {
+  run: number;
+  conversation: number;
+}
+
+/** The run report for one run under one analysis version. */
+export const reports = pgTable(
+  "reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    analysisVersionId: uuid("analysis_version_id")
+      .notNull()
+      .references(() => analysisVersions.id, { onDelete: "cascade" }),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    status: text("status").$type<AnalysisStatus>().notNull().default("pending"),
+    model: text("model").notNull(),
+    /** The report writer's conversation so far, replayed unchanged on each call. */
+    messages: jsonb("messages").$type<AgentMessage[]>().notNull().default(sql`'[]'::jsonb`),
+    /** How many transcripts it must open. */
+    minTranscripts: integer("min_transcripts").notNull().default(0),
+    opened: jsonb("opened").$type<OpenedTranscript[]>().notNull().default(sql`'[]'::jsonb`),
+    nudges: integer("nudges").notNull().default(0),
+    calls: integer("calls").notNull().default(0),
+    /** The report in Markdown, as written. The footer is rendered separately. */
+    content: text("content"),
+    warning: text("warning"),
+    citationCheck: jsonb("citation_check").$type<CitationCheckResult>(),
+    error: text("error"),
+    ...tokenColumns(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("reports_version_run_uq").on(t.analysisVersionId, t.runId)],
 );

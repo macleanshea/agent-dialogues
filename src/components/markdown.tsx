@@ -15,11 +15,15 @@ export function Markdown({ children }: { children: string }) {
         disallowedElements={["img"]}
         unwrapDisallowed
         components={{
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noopener noreferrer nofollow">
-              {children}
-            </a>
-          ),
+          // Links inside the app (citations) open in place; anything else opens a new tab.
+          a: ({ href, children }) =>
+            (href?.startsWith("/") && !href.startsWith("//")) || href?.startsWith("#") ? (
+              <a href={href}>{children}</a>
+            ) : (
+              <a href={href} target="_blank" rel="noopener noreferrer nofollow">
+                {children}
+              </a>
+            ),
         }}
       >
         {children}

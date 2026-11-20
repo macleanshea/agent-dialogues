@@ -159,7 +159,7 @@ describe("one step at a time (as Workflow runs it)", () => {
     const turn = {
       turnNumber: 1, speaker: "A" as const, model: "mock", text: "hi", thinkingSummary: null, content: [],
       stopReason: "end_turn", rawUsage: null, costUsd: 0.5, truncated: false, placeholderUsed: false, attempts: 1,
-      maxTokensUsed: 100, repetition: null, repetitionTriggered: false, signedOff: false,
+      maxTokensUsed: 100, repetition: null, repetitionTriggered: false, signedOff: false, measures: { crossSimilarity: null, emojiCount: 0, modelMentions: [] },
       usage: { inputTokens: 1, outputTokens: 1, thinkingTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
     };
     expect(await saveTurn(db, conv.id, turn)).toBe(true);

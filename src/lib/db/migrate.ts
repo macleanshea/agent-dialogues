@@ -1,8 +1,9 @@
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { turnMeasures } from "../analysis/measures";
 import { PREDEFINED_FIELDS } from "../fields/library";
 import type { Db } from "./index";
-import { fieldDefinitions } from "./schema";
+import { fieldDefinitions, turns } from "./schema";
 
 export const MIGRATIONS_FOLDER = path.join(process.cwd(), "drizzle");
 
@@ -16,6 +17,33 @@ export async function migrateAndSeed(db: Db, driver: "pglite" | "postgres"): Pro
     await migrate(db as never, { migrationsFolder: MIGRATIONS_FOLDER });
   }
   await seedFieldLibrary(db);
+  await backfillTurnMeasures(db);
+}
+
+/**
+ * Turns saved before PR 3 have no computed measures. Fills them in from the
+ * stored text, one conversation at a time. Does nothing once all are filled.
+ */
+export async function backfillTurnMeasures(db: Db): Promise<number> {
+  const pending = await db.selectDistinct({ id: turns.conversationId }).from(turns).where(isNull(turns.emojiCount));
+  let updated = 0;
+  for (const { id } of pending) {
+    const rows = await db
+      .select({ id: turns.id, turnNumber: turns.turnNumber, text: turns.text, emojiCount: turns.emojiCount })
+      .from(turns)
+      .where(eq(turns.conversationId, id))
+      .orderBy(asc(turns.turnNumber));
+    const texts = new Map(rows.map((r) => [r.turnNumber, r.text]));
+    for (const r of rows.filter((x) => x.emojiCount === null)) {
+      const m = turnMeasures(texts, r.turnNumber);
+      await db
+        .update(turns)
+        .set({ crossSimilarity: m.crossSimilarity, emojiCount: m.emojiCount, modelMentions: m.modelMentions })
+        .where(inArray(turns.id, [r.id]));
+      updated++;
+    }
+  }
+  return updated;
 }
 
 /**

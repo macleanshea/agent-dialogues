@@ -21,21 +21,34 @@ import {
 import { modelLabel } from "@/lib/models";
 import { getConversationPage } from "@/lib/runs/service";
 import { cn, formatNumber, formatUsd } from "@/lib/utils";
+import { CodingView } from "@/components/analysis/coding";
+import { VersionPicker, versionParam } from "@/components/analysis/version-picker";
+import type { FieldDef } from "@/lib/analysis/fields";
+import { conversationMeasures } from "@/lib/analysis/measures";
+import { getConversationCoding } from "@/lib/analysis/queries";
+import { customFieldNames, listFieldLibrary } from "@/lib/analysis/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConversationPage({
   params,
+  searchParams,
 }: PageProps<"/experiments/[exp]/runs/[run]/conversations/[conv]">) {
   const { exp, run, conv } = await params;
   const expN = parseIndex(exp);
   const runN = parseIndex(run);
   const convN = parseIndex(conv);
   if (!expN || !runN || !convN) notFound();
-  const page = await getConversationPage(await getDb(), expN, runN, convN);
+  const db = await getDb();
+  const page = await getConversationPage(db, expN, runN, convN);
   if (!page) notFound();
   const { experiment, run: r, conversation: c, turns } = page;
   const cfg = r.config;
+  const analysis = await getConversationCoding(db, c, experiment.id, versionParam(await searchParams));
+  const custom = customFieldNames(analysis.version?.fieldDefinitions ?? [], await listFieldLibrary(db));
+  const measures = conversationMeasures(c, turns);
+  const pct = (x: number | null) => (x === null ? "—" : `${Math.round(x * 100)}%`);
+  const here = conversationHref(experiment.number, r.number, c.index);
 
   const truncated = turns.filter((t) => t.truncated).length;
   const empty = turns.filter((t) => t.placeholderUsed).length;
@@ -106,6 +119,32 @@ export default async function ConversationPage({
         </div>
       </div>
 
+      {analysis.version && (
+        <div className="flex flex-col gap-2">
+          <VersionPicker base={here} versions={analysis.versions.map((x) => x.version)} current={analysis.version.version} />
+          <CodingView coding={analysis.coding} defs={analysis.version.fieldDefinitions as FieldDef[]} custom={custom} />
+        </div>
+      )}
+
+      <Card data-testid="conversation-measures">
+        <CardBody className="grid gap-4 text-sm sm:grid-cols-2">
+          {(["A", "B"] as const).map((s) => (
+            <div key={s}>
+              <div className="mb-1 text-xs font-semibold">Speaker {s}</div>
+              <div className="text-xs text-muted-foreground tabular-nums">
+                {measures.bySpeaker[s].turns} turns · {formatNumber(measures.bySpeaker[s].totalTokens)} tokens ·{" "}
+                {formatNumber(measures.bySpeaker[s].thinkingTokens)} thinking tokens · mean visible length{" "}
+                {formatNumber(Math.round(measures.bySpeaker[s].meanVisibleLength))} chars
+              </div>
+            </div>
+          ))}
+          <div className="text-xs text-muted-foreground sm:col-span-2">
+            Signed off:{" "}
+            {measures.signOffs.length ? measures.signOffs.map((x) => `${x.speaker} at T${x.turn}`).join(", ") : "no one"}
+          </div>
+        </CardBody>
+      </Card>
+
       <Card className="border-dashed">
         <CardBody>
           <div className="mb-1 text-xs font-medium text-muted-foreground">
@@ -159,8 +198,13 @@ export default async function ConversationPage({
                   <p className="text-sm text-muted-foreground italic">No visible text.</p>
                 )}
 
+                <div className="text-xs text-muted-foreground tabular-nums" data-testid="turn-measures">
+                  {formatNumber(t.text.length)} chars · self-repetition {pct(t.repetition)} · cross-speaker similarity{" "}
+                  {pct(t.crossSimilarity)} · emoji and symbols {t.emojiCount ?? "—"}
+                  {t.modelMentions && t.modelMentions.length > 0 && <> · names {t.modelMentions.join(", ")}</>}
+                </div>
                 <div className="text-xs text-muted-foreground tabular-nums">
-                  {formatNumber(t.text.length)} chars · in {formatNumber(t.inputTokens)} · out{" "}
+                  in {formatNumber(t.inputTokens)} · out{" "}
                   {formatNumber(t.outputTokens)} (thinking {formatNumber(t.thinkingTokens)}) · cached read{" "}
                   {formatNumber(t.cacheReadTokens)} · cache write {formatNumber(t.cacheWriteTokens)} · {formatUsd(t.costUsd)}
                 </div>

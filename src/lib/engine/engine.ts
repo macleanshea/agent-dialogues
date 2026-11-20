@@ -1,3 +1,4 @@
+import { turnMeasures, type TurnMeasures } from "../analysis/measures";
 import { addUsage, costUsd, type Effort, type TokenUsage } from "../models";
 import { buildHistory, speakerForTurn, textForOtherAgent, thinkingSummary, visibleText } from "./history";
 import { endsWithSignOff, trigramOverlap } from "./stop-rules";
@@ -61,6 +62,8 @@ export interface NewTurn {
   repetitionTriggered: boolean;
   /** The message ended with [END] on its own line (only checked when sign-off is on). */
   signedOff: boolean;
+  /** Computed measures: cross-speaker similarity, emoji and symbol count, model or maker names. */
+  measures: TurnMeasures;
 }
 
 /** How a conversation ended. */
@@ -232,6 +235,7 @@ export async function takeTurn(input: TakeTurnInput): Promise<TurnStep> {
     repetition,
     repetitionTriggered: repetitionHit,
     signedOff,
+    measures: turnMeasures(texts, t),
   };
 
   let end: ConversationEnd | null = null;

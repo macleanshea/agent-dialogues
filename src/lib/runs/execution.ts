@@ -68,6 +68,9 @@ export async function saveTurn(db: Db, conversationId: string, t: NewTurn): Prom
         maxTokensUsed: t.maxTokensUsed,
         repetition: t.repetition,
         signedOff: t.signedOff,
+        crossSimilarity: t.measures.crossSimilarity,
+        emojiCount: t.measures.emojiCount,
+        modelMentions: t.measures.modelMentions,
       })
       .onConflictDoNothing({ target: [turns.conversationId, turns.turnNumber] })
       .returning({ id: turns.id });

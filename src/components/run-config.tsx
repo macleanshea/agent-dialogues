@@ -74,10 +74,13 @@ export function RunConfigView({ config }: { config: RunConfigSnapshot }) {
         </dl>
       </section>
       <section>
-        <h3 className="mb-1 text-sm font-semibold">Analysis</h3>
+        <h3 className="mb-1 text-sm font-semibold">Analysis (as first set; see the Analysis panel for re-analysis)</h3>
         <dl>
           <Row label="Analysis focus">
             {c.analysisFocus ? c.analysisFocus : <span className="text-muted-foreground italic">None</span>}
+          </Row>
+          <Row label="Fields">
+            {c.fields?.length ? <span className="font-mono text-xs">{c.fields.join(", ")}</span> : <span className="text-muted-foreground italic">None</span>}
           </Row>
           <Row label="Summarizer model">{modelLabel(c.summarizerModel)}</Row>
           <Row label="Report model">{modelLabel(c.reportModel)}</Row>

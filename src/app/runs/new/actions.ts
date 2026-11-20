@@ -39,16 +39,23 @@ export async function createRunAction(_prev: RunFormState, formData: FormData): 
     return { errors, message: "Some settings need fixing. See the messages next to each field." };
   }
 
-  const usesApi = [parsed.data.agentA.model, parsed.data.agentB.model].some((m) => getModel(m)?.kind === "anthropic");
+  const c = parsed.data;
+  const usesApi = [c.agentA.model, c.agentB.model, c.summarizerModel, c.reportModel].some((m) => getModel(m)?.kind === "anthropic");
   if (usesApi && !process.env.ANTHROPIC_API_KEY) {
     return {
       errors: {},
-      message: "ANTHROPIC_API_KEY is not set for this deployment, so only the Mock model can run. Add the key in Vercel and redeploy.",
+      message:
+        "ANTHROPIC_API_KEY is not set for this deployment, so only the Mock model can be used (for the agents, the summarizer, and the report). Add the key in Vercel and redeploy.",
     };
   }
 
   const db = await getDb();
-  const created = await createStandaloneRun(db, parsed.data);
+  let created;
+  try {
+    created = await createStandaloneRun(db, c);
+  } catch (err) {
+    return { errors: { fields: err instanceof Error ? err.message : String(err) }, message: "Some settings need fixing." };
+  }
   try {
     const run = await start(runWorkflow, [created.runId]);
     await recordWorkflowRun(db, created.runId, run.runId);

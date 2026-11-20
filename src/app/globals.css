@@ -12,6 +12,8 @@
   --primary-foreground: #fafafa;
   --destructive: #dc2626;
   --ring: #a1a1aa;
+  /* Chart series color (single-series charts only). */
+  --series-1: #2a78d6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -26,6 +28,7 @@
     --primary-foreground: #18181b;
     --destructive: #f87171;
     --ring: #52525b;
+    --series-1: #3987e5;
   }
 }
 

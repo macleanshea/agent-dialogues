@@ -17,7 +17,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/" className="text-base font-semibold tracking-tight">
               Agent Dialogues
             </Link>
-            <ButtonLink href="/runs/new">New run</ButtonLink>
+            <nav className="flex items-center gap-4">
+              <Link href="/prompts" className="text-sm text-muted-foreground hover:text-foreground">
+                Prompts
+              </Link>
+              <ButtonLink href="/runs/new">New run</ButtonLink>
+            </nav>
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>

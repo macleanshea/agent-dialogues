@@ -1,6 +1,7 @@
 import { Badge, type Tone } from "@/components/ui/badge";
 import type { ConversationStatus, ConversationStopReason } from "@/lib/engine/types";
-import type { RunStatus } from "@/lib/db/schema";
+import type { AnalysisStatus, RunStatus } from "@/lib/db/schema";
+import { STOP_REASON_TEXT } from "@/lib/analysis/labels";
 
 const STATUS_TONE: Record<string, Tone> = {
   draft: "neutral",
@@ -14,18 +15,11 @@ const STATUS_TONE: Record<string, Tone> = {
   mixed: "neutral",
 };
 
-export function StatusBadge({ status }: { status: RunStatus | ConversationStatus | "mixed" }) {
+export function StatusBadge({ status }: { status: RunStatus | ConversationStatus | "mixed" | AnalysisStatus }) {
   return <Badge tone={STATUS_TONE[status] ?? "neutral"}>{status}</Badge>;
 }
 
-export const STOP_REASON_LABEL: Record<ConversationStopReason, string> = {
-  turn_cap: "Turn cap reached",
-  repetition: "Repetition",
-  sign_off: "Sign-off",
-  error: "Error",
-  cost_ceiling: "Cost ceiling reached",
-  stopped_by_user: "Stopped by user",
-};
+export const STOP_REASON_LABEL = STOP_REASON_TEXT;
 
 export function stopReasonLabel(r: ConversationStopReason | null | undefined): string {
   return r ? (STOP_REASON_LABEL[r] ?? r) : "—";

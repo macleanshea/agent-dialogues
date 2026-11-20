@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PREDEFINED_FIELDS } from "./fields/library";
 import { DEFAULT_EFFORT, DEFAULT_JUDGE_MODEL, EFFORTS, MOCK_MODEL_ID, getModel } from "./models";
 
 export const OPENING_STUB = "[Begin the conversation.]";
@@ -64,6 +65,8 @@ export const runConfigSchema = z
     repetitionAction: z.enum(["flag", "stop"]),
     costCeilingUsd: num().pipe(z.number().positive("Must be more than 0").max(10_000, "At most 10,000")),
     analysisFocus: z.string().trim().max(2000),
+    /** Names of the selected fields, built-in or custom. Checked against the library when the run is created. */
+    fields: z.array(z.string().min(1).max(60)).max(100).default([]),
     summarizerModel: knownModel,
     reportModel: knownModel,
     judgeReadsThinking: z.boolean(),
@@ -79,6 +82,9 @@ export const runConfigSchema = z
   });
 
 export type RunConfig = z.infer<typeof runConfigSchema>;
+
+/** The picker starts with the Open-ended preset ticked. */
+export const DEFAULT_FIELDS = PREDEFINED_FIELDS.filter((f) => f.presets.includes("open_ended")).map((f) => f.name);
 
 export function defaultRunConfig(): RunConfig {
   return {
@@ -96,6 +102,7 @@ export function defaultRunConfig(): RunConfig {
     repetitionAction: "flag",
     costCeilingUsd: LIMITS.costCeilingUsd.default,
     analysisFocus: "",
+    fields: DEFAULT_FIELDS,
     summarizerModel: DEFAULT_JUDGE_MODEL,
     reportModel: DEFAULT_JUDGE_MODEL,
     judgeReadsThinking: false,

@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea, Toggle } from "@/components/ui/form";
 import { LIMITS, OPENING_STUB, SIGN_OFF_LINE, type RunConfig } from "@/lib/config";
-import { EFFORTS, EFFORT_LABELS, MODELS } from "@/lib/models";
+import { FieldPicker } from "@/components/field-picker";
+import { ModelOptions } from "@/components/model-options";
+import type { PickerField } from "@/lib/fields/picker";
+import { EFFORTS, EFFORT_LABELS } from "@/lib/models";
 import { createRunAction, type RunFormState } from "./actions";
 
 /** Number inputs hold text while the user types; the server validates them. */
@@ -13,23 +16,7 @@ type Values = { [K in keyof RunConfig]: RunConfig[K] extends number ? number | s
 
 const INITIAL_STATE: RunFormState = { errors: {}, message: null };
 
-function ModelOptions({ agent }: { agent: boolean }) {
-  return (
-    <>
-      {MODELS.map((m) => {
-        const unavailable = agent && !m.agentReady;
-        return (
-          <option key={m.id} value={m.id} disabled={unavailable}>
-            {m.label}
-            {unavailable ? " (available in a later update)" : ""}
-          </option>
-        );
-      })}
-    </>
-  );
-}
-
-export function RunForm({ initial }: { initial: RunConfig }) {
+export function RunForm({ initial, fields }: { initial: RunConfig; fields: PickerField[] }) {
   const [v, setV] = useState<Values>(initial);
   const [state, formAction, pending] = useActionState(createRunAction, INITIAL_STATE);
   const err = (path: string) => state.errors[path];
@@ -301,7 +288,7 @@ export function RunForm({ initial }: { initial: RunConfig }) {
       <Card>
         <CardHeader
           title="Analysis"
-          description="Saved with the run. Analysis itself, including choosing which fields to code, arrives in a later update."
+          description="After the run, a judge model codes every conversation against the fields you tick, then a report writer summarizes the run."
         />
         <CardBody className="flex flex-col gap-5">
           <Field
@@ -318,13 +305,14 @@ export function RunForm({ initial }: { initial: RunConfig }) {
               onChange={(e) => set("analysisFocus", e.target.value)}
             />
           </Field>
+          <FieldPicker fields={fields} selected={v.fields} onChange={(names) => set("fields", names)} error={err("fields")} />
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Summarizer model" htmlFor="summarizer" error={err("summarizerModel")}>
+            <Field label="Summarizer model" htmlFor="summarizer" hint="Codes each conversation." error={err("summarizerModel")}>
               <Select id="summarizer" value={v.summarizerModel} onChange={(e) => set("summarizerModel", e.target.value)}>
                 <ModelOptions agent={false} />
               </Select>
             </Field>
-            <Field label="Report model" htmlFor="report" error={err("reportModel")}>
+            <Field label="Report model" htmlFor="report" hint="Writes the run report." error={err("reportModel")}>
               <Select id="report" value={v.reportModel} onChange={(e) => set("reportModel", e.target.value)}>
                 <ModelOptions agent={false} />
               </Select>
@@ -333,6 +321,7 @@ export function RunForm({ initial }: { initial: RunConfig }) {
           <Toggle
             id="judge-thinking"
             label="Judge can read thinking summaries"
+            hint="Off: the judge sees only what the agents said to each other."
             checked={v.judgeReadsThinking}
             onChange={(e) => set("judgeReadsThinking", e.target.checked)}
           />

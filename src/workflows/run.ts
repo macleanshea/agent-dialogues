@@ -1,7 +1,9 @@
 import { RetryableError, getStepMetadata } from "workflow";
 import { start } from "workflow/api";
 import type { AdvanceResult, RunPlan } from "@/lib/runs/execution";
+import type { AnalysisPlan } from "@/lib/analysis/service";
 import type { PendingRetry } from "@/lib/engine/engine";
+import { analysisWorkflow } from "./analysis";
 
 /**
  * Vercel Workflow orchestration for one run.
@@ -34,7 +36,17 @@ export async function runWorkflow(runId: string) {
       }
     }),
   );
-  return finalizeRunStep(runId);
+  // Create the analysis rows before the run is marked finished, so the run
+  // page keeps refreshing straight through into the analysis.
+  const analysis = await prepareAnalysisStep(runId);
+  const status = await finalizeRunStep(runId);
+  // Analysis (codings, then the run report) runs as its own workflow.
+  try {
+    await start(analysisWorkflow, [runId, analysis.versionId]);
+  } catch (err) {
+    await failAnalysisStep(analysis.codingIds, analysis.reportId, `Analysis could not be started: ${errorMessage(err)}`);
+  }
+  return status;
 }
 
 export async function conversationWorkflow(conversationId: string) {
@@ -109,6 +121,22 @@ async function failConversationStep(conversationId: string, message: string): Pr
   const { getDb } = await import("@/lib/db");
   const { failConversation } = await import("@/lib/runs/execution");
   await failConversation(await getDb(), conversationId, message);
+}
+
+async function prepareAnalysisStep(runId: string): Promise<AnalysisPlan> {
+  "use step";
+  const { getDb } = await import("@/lib/db");
+  const { prepareAnalysis } = await import("@/lib/analysis/service");
+  return prepareAnalysis(await getDb(), runId);
+}
+
+async function failAnalysisStep(codingIds: string[], reportId: string | null, message: string): Promise<void> {
+  "use step";
+  const { getDb } = await import("@/lib/db");
+  const { failCoding, failReport } = await import("@/lib/analysis/service");
+  const db = await getDb();
+  for (const id of codingIds) await failCoding(db, id, message, { raw: true });
+  if (reportId) await failReport(db, reportId, message, { raw: true });
 }
 
 async function finalizeRunStep(runId: string) {

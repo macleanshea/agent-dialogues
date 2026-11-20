@@ -81,7 +81,7 @@ describe("database", () => {
     const again = await saveTurn(db, page!.conversation.id, {
       turnNumber: 1, speaker: "A", model: "mock", text: "dupe", thinkingSummary: null, content: [],
       stopReason: "end_turn", rawUsage: null, costUsd: 0, truncated: false, placeholderUsed: false, attempts: 1, maxTokensUsed: 1,
-      repetition: null, repetitionTriggered: false, signedOff: false,
+      repetition: null, repetitionTriggered: false, signedOff: false, measures: { crossSimilarity: null, emojiCount: 0, modelMentions: [] },
       usage: { inputTokens: 999, outputTokens: 999, thinkingTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
     });
     expect(again).toBe(false);

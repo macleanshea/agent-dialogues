@@ -292,3 +292,39 @@ Models and prices (checked 2026-11-19 against the models overview and pricing pa
 - Claude Fable 5.2 (claude-fable-5-2) is added to the model list at the user's request, beyond the three IDs the spec names: $8 / $10 / $16 / $0.20 / $40. Its default effort on the API is high, but the form's default stays Medium for every model.
 - Cost uses the 5-minute cache-write rate.
 - The Vercel project was created while the repo was empty, so Vercel did not detect Next.js and treated the app as a static site. `vercel.json` now sets the framework to Next.js, so the setting lives in the repo instead of the dashboard.
+
+### PR 2 (real runs)
+API facts checked on 2026-11-20 (Messages API reference, prompt caching, thinking, preserved thinking, errors, and rate limits pages)
+- Empty text blocks: the API reference gives a text block's `text` a minimum length of 1, so an empty text block in a request is rejected. A reply with no visible text can come back as thinking only, or with an empty text block. Whitespace-only text is treated the same as empty, to be safe. This was confirmed from the docs, not with a live call: the build sandbox had no API key.
+- What this means for the empty-reply rule: the other agent gets "[no reply]" as the spec says. For the agent's own history, its turn is replayed with its thinking blocks unchanged, any empty text blocks dropped, and a "[no reply]" text block added after the thinking. Both agents see the same placeholder. The stored turn keeps the raw blocks exactly as returned. The replayed form depends only on the stored turn, so every later request sends the same bytes and the history stays append-only, as Opus 5.5's thinking check requires.
+- Each agent call sends `thinking: {type: "adaptive", display: "summarized"}`, `output_config.effort`, and a top-level `cache_control: {type: "ephemeral"}` (automatic caching, 5-minute lifetime). It sends no temperature, top_p, or top_k. The call streams internally and waits for the whole message, so a large max tokens never trips the SDK's time check. Nothing is streamed to the UI.
+- Prompts under 512 tokens are not cached on any of the listed models, so the first turns of a conversation usually show 0 cached tokens.
+- No refusal fallbacks are sent. A server-side fallback would quietly let a different model write the turn, which would spoil the comparison. A refusal is recorded on the turn and the conversation continues, as in PR 1.
+
+Execution with Vercel Workflow (`workflow` 5.7.0, `@anthropic-ai/sdk` 1.11.0)
+- One parent workflow per run and one child workflow per conversation. Each step of a child makes at most one model call and stores its turn. The retry at double max tokens after an empty truncated reply is its own step.
+- Concurrency: the parent splits conversations into `concurrency` lanes, taking turns (C01 to lane 1, C02 to lane 2, and so on). Each lane runs its conversations one after another. A lane that finishes early does not take work from a slower lane.
+- One child per conversation keeps each run history small (at most about 200 steps). Vercel caps the events per workflow run. The exact number could not be read from the build sandbox (vercel.com was blocked). If a very long conversation ever fails with `MAX_EVENTS_EXCEEDED`, the documented fix is the project environment variable `WORKFLOW_VM=quickjs`.
+- Retries: the SDK's own retries are off. A 429, 5xx, 529, or dropped connection fails the step, and Workflow retries it up to 6 times. Each retry waits for the API's retry-after or a backoff (10 s, doubling up to 2 minutes), whichever is longer. A 429 with no retry-after is the monthly spend cap and is not retried. When retries run out, the conversation ends as errored, with stop reason "error" and a message starting "API error after retries". Other API errors (such as a 400) end the conversation right away.
+- Hobby functions stop at 300 seconds, so one model call must finish in about 280 seconds (the SDK timeout). A very large max tokens at high effort on Opus or Fable could exceed that, in which case the step is retried and the conversation eventually errors. This is not handled further in v1.
+- Workflow needs the Vercel project setting "Enable access to System Environment Variables". Without it, every run fails before its first step.
+- Locally and in CI, Workflow uses its Local World (state in `.workflow-data/`), so the click-through tests run the real workflow code with the Mock model.
+- The form action starts the workflow and goes straight to the run page. If the workflow cannot be started, the run is marked failed with the reason. This replaces PR 1's in-request execution.
+
+Stop rules and repetition
+- Word-trigram overlap: words are lowercased, with punctuation removed. The score is the number of shared trigrams divided by all distinct trigrams in the two messages (Jaccard). Messages under three words score 1 if their words are identical and 0 if not. Two empty messages score 0, because silence is handled by the empty-reply rule.
+- Each turn after a speaker's first is one check (against that speaker's previous message). "Two consecutive checks" means two turns in a row, so both agents repeated themselves back to back. The flagged turn is the second of the two. One agent repeating itself while the other varies does not trigger it. Each turn's score is stored and shown on the transcript.
+- Sign-off is only checked when the toggle is on. [END] must be on its own line at the end of the message, ignoring trailing whitespace.
+- After a turn, end conditions are checked in this order: error, sign-off, repetition (when the action is "stop"), turn cap.
+- A turn retried at double max tokens now stores the tokens of both attempts, not just the cost of both, so the token totals and the cost agree.
+
+Cost, Stop, and polling
+- The run's cost is updated in the same database transaction that saves each turn. The ceiling is checked against it before every model call. Calls already in flight in other conversations still finish, so a run can go over the ceiling by up to one call per running conversation. Conversations stopped this way have status "done" and stop reason "cost_ceiling".
+- The cost meter on the run page shows spend against the ceiling, then uncached input, cached input read (with its share of all input), input written to the cache, output, and thinking (with its share of output). The conversation table and each turn also show cached tokens.
+- Stop sets the run to "stopped" at once. Conversations not yet started are stopped right away. Running conversations stop before their next model call, keeping any turn already in progress. The workflow then finishes on its own. It is not force-cancelled, so no conversation is left marked "running".
+- Pages refresh every 2 seconds while the run is queued or running, or while any conversation is still running.
+
+Other
+- Every listed model, including Fable 5.2, can now be chosen for either agent. A run can mix the Mock and real models. If a real model is chosen and the deployment has no ANTHROPIC_API_KEY, the form says so.
+- Mock model additions: it rejects requests the API would reject (an empty text block, an empty message, a first message that is not from the user). It reports cache reads and writes the way automatic caching does, with the same 512-token minimum. New test hooks: [mock:repeat], [mock:end], and [mock:slow] (1.5 seconds per reply).
+- Schema additions: `runs.stop_requested`, `runs.workflow_run_id`, `turns.repetition`, `turns.signed_off`.

@@ -12,6 +12,9 @@ const setup = (patch: Partial<ConversationSetup> = {}): ConversationSetup => ({
   attributeOpeningToB: false,
   turns: 6,
   maxTokens: 8000,
+  signOff: false,
+  repetitionThreshold: 0.8,
+  repetitionAction: "flag",
   ...patch,
 });
 

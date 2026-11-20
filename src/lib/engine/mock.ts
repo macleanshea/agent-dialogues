@@ -1,5 +1,5 @@
 import type { ContentBlock, ModelClient, ModelRequest, ModelResponse } from "./types";
-import { visibleText } from "./history";
+import { isTextBlock, visibleText } from "./history";
 
 /**
  * A fake model with deterministic canned replies. Same request in, same
@@ -11,10 +11,20 @@ import { visibleText } from "./history";
  * - Thinking uses up max_tokens first. If max_tokens is too small, the text is
  *   cut short (stop reason "max_tokens"), or missing entirely.
  *
+ * - It rejects requests the API would reject: an empty or whitespace-only
+ *   text block, an empty message, or a first message that is not "user".
+ * - It reports cache reads and writes the way automatic prompt caching does:
+ *   each request writes the whole prompt to the cache and reads back what the
+ *   previous request from the same agent wrote. Prompts under 512 tokens are
+ *   not cached, as on the real models.
+ *
  * Test hooks, written anywhere in a system prompt:
  * - [mock:empty]   reply with no visible text (stop reason "end_turn").
  * - [mock:refuse]  reply with stop reason "refusal".
  * - [mock:error]   throw an error, as a failed API call would.
+ * - [mock:repeat]  reply with the same text every turn.
+ * - [mock:end]     end every reply with [END] on its own line.
+ * - [mock:slow]    wait 1.5 seconds before replying.
  */
 
 const OPENERS = [
@@ -63,6 +73,23 @@ export function estimateTokens(s: string): number {
 }
 
 const THINKING_TOKENS = 40;
+/** Prompts shorter than this are not cached, matching the current models' minimum. */
+export const MIN_CACHEABLE_TOKENS = 512;
+
+/** Throws the way the API answers an invalid request (a 400). */
+export function validateRequest(req: ModelRequest): void {
+  if (req.messages.length === 0 || req.messages[0].role !== "user") {
+    throw new Error("Mock 400: the first message must use the user role");
+  }
+  req.messages.forEach((m, i) => {
+    if (m.content.length === 0) throw new Error(`Mock 400: messages.${i} has no content`);
+    m.content.forEach((b, j) => {
+      if (isTextBlock(b) && b.text.trim().length === 0) {
+        throw new Error(`Mock 400: messages.${i}.content.${j}: text content blocks must contain non-whitespace text`);
+      }
+    });
+  });
+}
 
 function lastUserText(req: ModelRequest): string {
   for (let i = req.messages.length - 1; i >= 0; i--) {
@@ -83,6 +110,7 @@ export function mockReply(req: ModelRequest): ModelResponse {
   if (system.includes("[mock:error]")) {
     throw new Error("Mock model error (requested with [mock:error])");
   }
+  validateRequest(req);
 
   const heard = lastUserText(req);
   // Same inputs give the same reply; each conversation in a run differs.
@@ -96,6 +124,8 @@ export function mockReply(req: ModelRequest): ModelResponse {
   let text: string;
   if (system.includes("[mock:empty]")) {
     text = "";
+  } else if (system.includes("[mock:repeat]")) {
+    text = `${speaker} says the same thing again: ${MIDDLES[0]} ${CLOSERS[0]}`;
   } else {
     text =
       `**${speaker}, turn ${turnNumber}.** ${pick(OPENERS, 1)} ` +
@@ -103,7 +133,22 @@ export function mockReply(req: ModelRequest): ModelResponse {
       `${pick(MIDDLES, 2)} ${pick(CLOSERS, 3)}`;
   }
 
-  const inputTokens = estimateTokens(system) + req.messages.reduce((n, m) => n + estimateTokens(JSON.stringify(m.content)), 0);
+  if (system.includes("[mock:end]") && text) text = `${text}\n\n[END]`;
+
+  // Automatic caching: the previous request from this agent wrote everything
+  // up to its last message, which is this request minus the newest two messages.
+  const tokensOf = (n: number) =>
+    estimateTokens(system) + req.messages.slice(0, n).reduce((s, m) => s + estimateTokens(JSON.stringify(m.content)), 0);
+  const promptTokens = tokensOf(req.messages.length);
+  let inputTokens = promptTokens;
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
+  if (promptTokens >= MIN_CACHEABLE_TOKENS) {
+    const previous = req.messages.length > 2 ? tokensOf(req.messages.length - 2) : 0;
+    cacheReadTokens = previous >= MIN_CACHEABLE_TOKENS ? previous : 0;
+    cacheWriteTokens = promptTokens - cacheReadTokens;
+    inputTokens = 0;
+  }
 
   // Thinking spends the max_tokens budget first.
   const thinkingTokens = Math.min(THINKING_TOKENS, req.maxTokens);
@@ -126,19 +171,20 @@ export function mockReply(req: ModelRequest): ModelResponse {
   return {
     content,
     stopReason,
-    usage: { inputTokens, outputTokens, thinkingTokens, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    usage: { inputTokens, outputTokens, thinkingTokens, cacheReadTokens, cacheWriteTokens },
     rawUsage: {
       input_tokens: inputTokens,
       output_tokens: outputTokens,
       output_tokens_details: { thinking_tokens: thinkingTokens },
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
+      cache_read_input_tokens: cacheReadTokens,
+      cache_creation_input_tokens: cacheWriteTokens,
     },
   };
 }
 
 export const mockClient: ModelClient = {
   async call(req) {
+    if ((req.system ?? "").includes("[mock:slow]")) await new Promise((r) => setTimeout(r, 1500));
     return mockReply(req);
   },
 };

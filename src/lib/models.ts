@@ -56,22 +56,21 @@ export const MODELS: ModelInfo[] = [
     label: "Claude Fable 5.2",
     kind: "anthropic",
     price: { input: 8, cacheWrite5m: 10, cacheWrite1h: 16, cacheRead: 0.2, output: 40 },
-    agentReady: false,
+    agentReady: true,
   },
   {
     id: "claude-opus-5-5",
     label: "Claude Opus 5.5",
     kind: "anthropic",
     price: { input: 4, cacheWrite5m: 5, cacheWrite1h: 8, cacheRead: 0.2, output: 20 },
-    // PR 1 runs mock only. Real calls arrive in PR 2.
-    agentReady: false,
+    agentReady: true,
   },
   {
     id: "claude-sonnet-5-5",
     label: "Claude Sonnet 5.5",
     kind: "anthropic",
     price: { input: 2, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.1, output: 10 },
-    agentReady: false,
+    agentReady: true,
   },
   {
     id: "claude-haiku-5-5",
@@ -82,7 +81,7 @@ export const MODELS: ModelInfo[] = [
       thresholdTokens: 100_000,
       price: { input: 0.5, cacheWrite5m: 0.625, cacheWrite1h: 1, cacheRead: 0.05, output: 2.5 },
     },
-    agentReady: false,
+    agentReady: true,
   },
 ];
 
@@ -113,6 +112,16 @@ export const ZERO_USAGE: TokenUsage = {
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
 };
+
+export function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    thinkingTokens: a.thinkingTokens + b.thinkingTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+  };
+}
 
 /** Cost of one API call in USD. Cache writes are priced at the 5-minute rate. */
 export function costUsd(modelId: string, usage: TokenUsage): number {

@@ -63,6 +63,10 @@ export const runs = pgTable(
     status: text("status").$type<RunStatus>().notNull().default("draft"),
     costUsd: doublePrecision("cost_usd").notNull().default(0),
     error: text("error"),
+    /** Set by the Stop button. Conversations check it before every model call. */
+    stopRequested: boolean("stop_requested").notNull().default(false),
+    /** The Vercel Workflow run executing this run. */
+    workflowRunId: text("workflow_run_id"),
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -90,7 +94,7 @@ export const conversations = pgTable(
     cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
     cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
     costUsd: doublePrecision("cost_usd").notNull().default(0),
-    /** First turn where repetition crossed the threshold (PR 2). */
+    /** First turn where repetition met the stop condition (two consecutive checks at or above the threshold). */
     repetitionFlagTurn: integer("repetition_flag_turn"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -128,6 +132,10 @@ export const turns = pgTable(
     placeholderUsed: boolean("placeholder_used").notNull().default(false),
     attempts: integer("attempts").notNull().default(1),
     maxTokensUsed: integer("max_tokens_used").notNull(),
+    /** Word-trigram overlap with the same speaker's previous message (null on each speaker's first turn). */
+    repetition: doublePrecision("repetition"),
+    /** The message ended with [END] on its own line while sign-off was on. */
+    signedOff: boolean("signed_off").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("turns_conversation_turn_uq").on(t.conversationId, t.turnNumber)],

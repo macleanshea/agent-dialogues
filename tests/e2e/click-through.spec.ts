@@ -17,9 +17,9 @@ test("empty list, then a mock run from the form through to a transcript", async 
   await expect(page.getByLabel("Cost ceiling per run (USD)")).toHaveValue("25");
   await expect(page.getByLabel("Attribute opening message to B")).toBeDisabled();
 
-  // Real models are listed but not selectable yet.
-  await expect(page.locator("#a-model option[value='claude-opus-5-5']")).toBeDisabled();
-  await expect(page.locator("#a-model option[value='claude-fable-5-2']")).toBeDisabled();
+  // Real models can be chosen now.
+  await expect(page.locator("#a-model option[value='claude-opus-5-5']")).toBeEnabled();
+  await expect(page.locator("#a-model option[value='claude-haiku-5-5']")).toBeEnabled();
 
   // Effort levels are capitalized, and xhigh shows as Extra.
   await expect(page.locator("#a-effort option")).toHaveText(["Low", "Medium", "High", "Extra", "Max"]);
@@ -50,11 +50,19 @@ test("empty list, then a mock run from the form through to a transcript", async 
   await page.getByLabel("Number of conversations").fill("3");
   await page.getByRole("button", { name: "Start run" }).click();
 
-  // Run page.
+  // Run page. The run executes in the background (Workflow) and the page
+  // refreshes itself until it is done.
   await expect(page).toHaveURL(/\/experiments\/1\/runs\/1$/);
   await expect(page.getByRole("heading", { name: "Smoke test" })).toBeVisible();
   await expect(page.getByTestId("conversation-row")).toHaveCount(3);
-  await expect(page.getByTestId("conversation-row").first()).toContainText("Turn cap reached");
+  await expect(page.getByTestId("conversation-row").first()).toContainText("Turn cap reached", { timeout: 30_000 });
+  await expect(page.getByTestId("conversation-row").last()).toContainText("Turn cap reached", { timeout: 30_000 });
+  await expect(page.getByTestId("live")).toHaveCount(0);
+  // The cost meter shows the ceiling and the token breakdown, thinking included.
+  const meter = page.getByTestId("cost-meter");
+  await expect(meter).toContainText("of $5.00 ceiling");
+  await expect(meter.getByTestId("tokens-thinking")).toContainText("720"); // 18 turns × 40 mock thinking tokens
+  await expect(meter.getByTestId("tokens-cache-read")).toBeVisible();
   await expect(page.getByText("If the conversation has reached a natural end").first()).toBeVisible();
 
   // Conversation page.
@@ -80,6 +88,37 @@ test("empty list, then a mock run from the form through to a transcript", async 
   await expect(row).toContainText("done");
   await row.getByRole("link", { name: "Smoke test" }).click();
   await expect(page).toHaveURL(/\/experiments\/1\/runs\/1$/);
+});
+
+test("the Stop button stops a running run", async ({ page }) => {
+  await page.goto("/runs/new");
+  await page.getByLabel("Name", { exact: true }).fill("Stop test");
+  // The slow mock takes 1.5 seconds per message, so the run is still going when we stop it.
+  await page.locator("#a-system").fill("[mock:slow]");
+  await page.getByLabel("Same as A").check();
+  await page.getByLabel("Turns").fill("40");
+  await page.getByLabel("Number of conversations").fill("4");
+  await page.getByLabel("Concurrency").fill("2");
+  await page.getByRole("button", { name: "Start run" }).click();
+
+  await expect(page.getByRole("heading", { name: "Stop test" })).toBeVisible();
+  await expect(page.getByTestId("live")).toBeVisible();
+  // Wait until at least one turn exists, then stop.
+  await expect
+    .poll(async () => Number((await page.getByTestId("conversation-row").first().locator("td").nth(3).textContent()) ?? 0), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Stop run" }).click();
+
+  await expect(page.getByRole("button", { name: "Stop run" })).toHaveCount(0);
+  const rows = page.getByTestId("conversation-row");
+  // Conversations that had not started stop at once; running ones after their current call.
+  await expect(rows.nth(3)).toContainText("Stopped by user");
+  await expect(rows.first()).toContainText("Stopped by user", { timeout: 15_000 });
+  await expect(page.getByTestId("live")).toHaveCount(0, { timeout: 15_000 });
+  await expect(rows.first().getByText("stopped", { exact: true })).toBeVisible();
+  await expect(page.getByText("stopped", { exact: true }).first()).toBeVisible();
 });
 
 test("unknown pages show not found", async ({ page }) => {

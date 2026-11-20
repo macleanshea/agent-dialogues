@@ -38,3 +38,33 @@ export function parseIndex(raw: string): number | null {
   const n = Number(raw);
   return n >= 1 && Number.isSafeInteger(n) ? n : null;
 }
+
+/** The main list with this experiment expanded. */
+export function experimentHref(exp: number): string {
+  return `/?open=${exp}#${experimentId(exp)}`;
+}
+
+export function addRunHref(exp: number): string {
+  return `/experiments/${exp}/runs/new`;
+}
+
+/** The run form pre-filled from an experiment's shared settings, to start a new experiment. */
+export function cloneHref(exp: number): string {
+  return `/runs/new?from=${exp}`;
+}
+
+export function comparisonHref(exp: number, comparison: number): string {
+  return `/experiments/${exp}/comparisons/${comparison}`;
+}
+
+/** Parses the main list's ?open=1,4 into experiment numbers. */
+export function parseOpenParam(raw: string | string[] | undefined): number[] {
+  const s = Array.isArray(raw) ? raw.join(",") : (raw ?? "");
+  return [...new Set(s.split(",").map((x) => parseIndex(x.trim())).filter((n): n is number => n !== null))];
+}
+
+/** The ?open= value with one experiment toggled. */
+export function toggleOpen(open: number[], exp: number): string {
+  const next = open.includes(exp) ? open.filter((n) => n !== exp) : [...open, exp];
+  return next.length ? `/?open=${next.sort((a, b) => a - b).join(",")}` : "/";
+}

@@ -63,7 +63,6 @@ function NewFieldForm({ onCreated, onCancel }: { onCreated: (f: PickerField) => 
   return (
     <div className="flex flex-col gap-4 rounded-md border border-border bg-muted/40 p-4" data-testid="new-field-form">
       <div className="text-sm font-semibold">New field</div>
-      <p className="-mt-3 text-xs text-muted-foreground">Saved to the library for every future run, and coded exactly like a built-in field.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Name" htmlFor="nf-name" hint="Lowercase, digits, and underscores, e.g. mentions_weather." error={errors.name}>
           <Input id="nf-name" value={d.name} onChange={(e) => set("name", e.target.value)} placeholder="mentions_weather" />

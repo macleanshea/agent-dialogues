@@ -8,16 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardBody } from "@/components/ui/card";
 import { NO_REPLY_PLACEHOLDER, OPENING_STUB } from "@/lib/config";
 import { getDb } from "@/lib/db";
-import {
-  citation,
-  conversationHref,
-  conversationId,
-  experimentId,
-  parseIndex,
-  runHref,
-  runId,
-  turnId,
-} from "@/lib/ids";
+import { citation, conversationHref, conversationId, experimentHref, experimentId, parseIndex, runHref, runId, turnId } from "@/lib/ids";
 import { modelLabel } from "@/lib/models";
 import { getConversationPage } from "@/lib/runs/service";
 import { cn, formatNumber, formatUsd } from "@/lib/utils";
@@ -61,7 +52,7 @@ export default async function ConversationPage({
         <Breadcrumbs
           items={[
             { label: "Experiments", href: "/" },
-            { label: experimentId(experiment.number) },
+            { label: experimentId(experiment.number), href: experimentHref(experiment.number) },
             { label: runId(r.number), href: runHref(experiment.number, r.number) },
             { label: conversationId(c.index) },
           ]}

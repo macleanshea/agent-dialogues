@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea, Toggle } from "@/components/ui/form";
@@ -9,17 +9,44 @@ import { FieldPicker } from "@/components/field-picker";
 import { ModelOptions } from "@/components/model-options";
 import type { PickerField } from "@/lib/fields/picker";
 import { EFFORTS, EFFORT_LABELS } from "@/lib/models";
-import { createRunAction, type RunFormState } from "./actions";
+import { PER_RUN_SETTINGS, normalizeVariables, pathsFor } from "@/lib/experiments/variables";
+import { createRunAction } from "./actions";
+import type { RunFormState } from "./validate";
 
 /** Number inputs hold text while the user types; the server validates them. */
 type Values = { [K in keyof RunConfig]: RunConfig[K] extends number ? number | string : RunConfig[K] };
 
 const INITIAL_STATE: RunFormState = { errors: {}, message: null };
 
-export function RunForm({ initial, fields }: { initial: RunConfig; fields: PickerField[] }) {
+/**
+ * The run form.
+ * - "new": a new standalone run; everything is editable.
+ * - "add": "+ Add run" in an experiment; pre-filled from the baseline, with only
+ *   the declared variable (plus the per-run cost ceiling and concurrency)
+ *   unlocked. The server enforces the same rule.
+ */
+export function RunForm({
+  initial,
+  fields,
+  mode = "new",
+  variables = [],
+  action = createRunAction,
+  analysisSummary,
+}: {
+  initial: RunConfig;
+  fields: PickerField[];
+  mode?: "new" | "add";
+  variables?: string[];
+  action?: (prev: RunFormState, formData: FormData) => Promise<RunFormState>;
+  /** Shown instead of the analysis settings in "add" mode. */
+  analysisSummary?: ReactNode;
+}) {
   const [v, setV] = useState<Values>(initial);
-  const [state, formAction, pending] = useActionState(createRunAction, INITIAL_STATE);
+  const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
   const err = (path: string) => state.errors[path];
+  const unlocked = new Set<string>([...normalizeVariables(variables).flatMap(pathsFor), ...PER_RUN_SETTINGS]);
+  /** True when this setting cannot be changed in this mode. */
+  const locked = (path: string) => mode === "add" && !unlocked.has(path);
 
   const set = <K extends keyof Values>(key: K, value: Values[K]) => setV((prev) => ({ ...prev, [key]: value }));
   const setA = (patch: Partial<Values["agentA"]>) => setV((p) => ({ ...p, agentA: { ...p.agentA, ...patch } }));
@@ -34,10 +61,11 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
       <input type="hidden" name="config" value={JSON.stringify(payload)} />
 
       <Card>
-        <CardHeader title="Name" description="Optional. Leave blank to name it after the models and turn count." />
+        <CardHeader title="Name" info={mode === "new" ? "Optional. Leave blank to name it after the models and turn count." : undefined} />
         <CardBody>
           <Input
             id="name"
+                disabled={locked("name")}
             aria-label="Name"
             value={v.name}
             onChange={(e) => set("name", e.target.value)}
@@ -47,19 +75,21 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
       </Card>
 
       <Card>
-        <CardHeader title="Agents" description="A speaks first and on every odd turn. B speaks on even turns." />
+        <CardHeader title="Agents" info="A speaks first and on every odd turn. B speaks on even turns." />
         <CardBody className="grid gap-6 md:grid-cols-2">
           {/* Agent A */}
           <fieldset className="flex flex-col gap-4">
             <legend className="mb-2 text-sm font-semibold">Agent A</legend>
             <Field label="Model" htmlFor="a-model" error={err("agentA.model")}>
-              <Select id="a-model" value={v.agentA.model} onChange={(e) => setA({ model: e.target.value })}>
+              <Select id="a-model"
+                disabled={locked("agentA.model")} value={v.agentA.model} onChange={(e) => setA({ model: e.target.value })}>
                 <ModelOptions agent />
               </Select>
             </Field>
             <Field label="Effort" htmlFor="a-effort" hint="How deeply the model thinks before replying.">
               <Select
                 id="a-effort"
+                disabled={locked("agentA.effort")}
                 value={v.agentA.effort}
                 onChange={(e) => setA({ effort: e.target.value as RunConfig["agentA"]["effort"] })}
               >
@@ -78,6 +108,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             >
               <Textarea
                 id="a-system"
+                disabled={locked("agentA.systemPrompt")}
                 rows={5}
                 value={v.agentA.systemPrompt}
                 onChange={(e) => setA({ systemPrompt: e.target.value })}
@@ -89,13 +120,15 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
           <fieldset className="flex flex-col gap-4">
             <legend className="mb-2 text-sm font-semibold">Agent B</legend>
             <Field label="Model" htmlFor="b-model" error={err("agentB.model")}>
-              <Select id="b-model" value={v.agentB.model} onChange={(e) => setB({ model: e.target.value })}>
+              <Select id="b-model"
+                disabled={locked("agentB.model")} value={v.agentB.model} onChange={(e) => setB({ model: e.target.value })}>
                 <ModelOptions agent />
               </Select>
             </Field>
             <Field label="Effort" htmlFor="b-effort" hint="How deeply the model thinks before replying.">
               <Select
                 id="b-effort"
+                disabled={locked("agentB.effort")}
                 value={v.agentB.effort}
                 onChange={(e) => setB({ effort: e.target.value as RunConfig["agentB"]["effort"] })}
               >
@@ -116,13 +149,14 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
                 id="b-system"
                 rows={5}
                 value={v.agentB.sameAsA ? v.agentA.systemPrompt : v.agentB.systemPrompt}
-                disabled={v.agentB.sameAsA}
+                disabled={v.agentB.sameAsA || locked("agentB.systemPrompt")}
                 onChange={(e) => setB({ systemPrompt: e.target.value })}
               />
             </Field>
             <Toggle
               id="b-same"
               label="Same as A"
+              disabled={locked("agentB.sameAsA")}
               checked={v.agentB.sameAsA}
               onChange={(e) => setB({ sameAsA: e.target.checked })}
             />
@@ -141,6 +175,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
           >
             <Textarea
               id="opening"
+                disabled={locked("openingMessage")}
               rows={3}
               value={v.openingMessage}
               onChange={(e) => set("openingMessage", e.target.value)}
@@ -154,7 +189,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
                 ? `Available once the opening message differs from "${OPENING_STUB}".`
                 : "B's history starts as if B had written the opening message."
             }
-            disabled={openingIsStub}
+            disabled={openingIsStub || locked("attributeOpeningToB")}
             checked={!openingIsStub && v.attributeOpeningToB}
             onChange={(e) => set("attributeOpeningToB", e.target.checked)}
             error={err("attributeOpeningToB")}
@@ -169,6 +204,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             >
               <Input
                 id="turns"
+                disabled={locked("turns")}
                 type="number"
                 min={LIMITS.turns.min}
                 max={LIMITS.turns.max}
@@ -184,6 +220,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             >
               <Input
                 id="max-tokens"
+                disabled={locked("maxTokens")}
                 type="number"
                 min={LIMITS.maxTokens.min}
                 value={v.maxTokens}
@@ -198,6 +235,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             >
               <Input
                 id="conversations"
+                disabled={locked("conversations")}
                 type="number"
                 min={LIMITS.conversations.min}
                 max={LIMITS.conversations.max}
@@ -213,6 +251,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             >
               <Input
                 id="concurrency"
+                disabled={locked("concurrency")}
                 type="number"
                 min={LIMITS.concurrency.min}
                 max={LIMITS.concurrency.max}
@@ -224,6 +263,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
 
           <Toggle
             id="sign-off"
+                disabled={locked("signOff")}
             label="Sign-off"
             hint={
               v.signOff ? (
@@ -247,6 +287,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             >
               <Input
                 id="rep-threshold"
+                disabled={locked("repetitionThreshold")}
                 type="number"
                 step="0.05"
                 min={0}
@@ -258,6 +299,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             <Field label="When repetition is found" htmlFor="rep-action">
               <Select
                 id="rep-action"
+                disabled={locked("repetitionAction")}
                 value={v.repetitionAction}
                 onChange={(e) => set("repetitionAction", e.target.value as RunConfig["repetitionAction"])}
               >
@@ -268,11 +310,12 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
             <Field
               label="Cost ceiling per run (USD)"
               htmlFor="cost-ceiling"
-              hint="Required. The run stops when it is reached."
+              hint="The run stops when it is reached."
               error={err("costCeilingUsd")}
             >
               <Input
                 id="cost-ceiling"
+                disabled={locked("costCeilingUsd")}
                 type="number"
                 step="0.01"
                 min={0}
@@ -285,10 +328,11 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
         </CardBody>
       </Card>
 
+      {mode === "new" ? (
       <Card>
         <CardHeader
           title="Analysis"
-          description="After the run, a judge model codes every conversation against the fields you tick, then a report writer summarizes the run."
+          info="After the run, a judge model codes every conversation against the fields you tick, then a report writer summarizes the run."
         />
         <CardBody className="flex flex-col gap-5">
           <Field
@@ -327,10 +371,16 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
           />
         </CardBody>
       </Card>
+      ) : (
+        <Card>
+          <CardHeader title="Analysis" info="Analysis settings belong to the experiment and apply to every run in it. Change them with Re-analyze." />
+          <CardBody>{analysisSummary}</CardBody>
+        </Card>
+      )}
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={pending}>
-          {pending ? "Starting…" : "Start run"}
+          {mode === "add" ? (pending ? "Saving…" : "Save draft") : pending ? "Starting…" : "Start run"}
         </Button>
         {state.message && !pending && (
           <p className="text-sm text-destructive" role="alert">

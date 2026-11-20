@@ -28,7 +28,7 @@ export function ReanalyzeForm({ experimentNumber, initial, fields }: { experimen
     <form action={formAction} className="flex flex-col gap-6" noValidate>
       <input type="hidden" name="settings" value={JSON.stringify(v)} />
       <Card>
-        <CardHeader title="Analysis" description="Pre-filled from the latest analysis version." />
+        <CardHeader title="Analysis" info="Pre-filled from the latest analysis version." />
         <CardBody className="flex flex-col gap-5">
           <Field label="Analysis focus" htmlFor="focus" hint="Free text the judge and report writer read. It produces findings, not counts. To count something, tick or add a field." error={state.errors.focus}>
             <Textarea id="focus" rows={2} className="font-sans text-sm" value={v.focus} onChange={(e) => set("focus", e.target.value)} />

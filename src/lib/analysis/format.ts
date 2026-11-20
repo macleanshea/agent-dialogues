@@ -42,16 +42,19 @@ export function promptOrNone(p: string): string {
 }
 
 /** One coding, compact, for the report writer. */
-export function formatCodingForReport(run: number, conversation: number, turnsCompleted: number, stop: ConversationStopReason | null, c: CodingOutput): string {
-  const id = `${runId(run)}·${conversationId(conversation)}`;
+/** A run as the writer sees it: R2 for a run report, or a masked label such as X for a comparison. */
+const runLabel = (run: number | string) => (typeof run === "number" ? runId(run) : run);
+
+export function formatCodingForReport(run: number | string, conversation: number, turnsCompleted: number, stop: ConversationStopReason | null, c: CodingOutput): string {
+  const id = `${runLabel(run)}·${conversationId(conversation)}`;
   return `<coding id="${id}" turns="${turnsCompleted}" stop="${stop ? STOP_REASON_TEXT[stop] : "none"}">\n${JSON.stringify(c)}\n</coding>`;
 }
 
-export function formatMeasuresLine(run: number, conversation: number, m: ConversationMeasures): string {
+export function formatMeasuresLine(run: number | string, conversation: number, m: ConversationMeasures): string {
   const signOffs = m.signOffs.length ? m.signOffs.map((s) => `${s.speaker} at T${s.turn}`).join(", ") : "none";
   const sp = (s: Speaker) =>
     `${s}: ${m.bySpeaker[s].turns} turns, mean visible length ${Math.round(m.bySpeaker[s].meanVisibleLength)} chars, ${m.bySpeaker[s].totalTokens} tokens, ${m.bySpeaker[s].thinkingTokens} thinking tokens`;
-  return `${runId(run)}·${conversationId(conversation)}: ${m.turnsCompleted} turns; stop: ${
+  return `${runLabel(run)}·${conversationId(conversation)}: ${m.turnsCompleted} turns; stop: ${
     m.stopReason ? STOP_REASON_TEXT[m.stopReason] : "none"
   }; truncated ${m.truncatedCount}; empty replies ${m.emptyReplyCount}; repetition first flagged ${
     m.repetitionFlagTurn ? `at T${m.repetitionFlagTurn}` : "never"

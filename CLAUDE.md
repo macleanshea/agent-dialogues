@@ -28,6 +28,8 @@
 - `src/lib/runs/service.ts`: creating runs, and the page queries.
 - `src/lib/runs/execution.ts`: executing runs one model call at a time (cost ceiling, Stop, finishing). `src/workflows/run.ts`: the Vercel Workflow that calls it.
 - `src/lib/analysis/`: PR 3 analysis. `prompts.ts` holds every analysis prompt; `fields.ts` is the one code path per field type (prompt text, JSON schema, storage, aggregation); `measures.ts` the computed measures; `service.ts` coding, the run report, and re-analysis; `citations.ts` the citation check; `judge.ts` the summarizer/report model client and the Mock judge. `src/workflows/analysis.ts` runs it.
+- `src/lib/experiments/`: PR 4. `variables.ts` the settings that may vary, their labels, and the baseline merge; `service.ts` declaring the variable, draft runs, locking, and the expanded list panel.
+- `src/lib/analysis/comparison.ts`: the comparison report (labels, masked prompt, masked transcript tool, unmasking). `mask.ts` masks model names. `src/workflows/comparison.ts` runs it.
 - `src/app/`: pages. `src/components/ui/`: the small component library.
 - `tests/unit/`: unit and database tests (Vitest). `tests/e2e/`: click-through tests (Playwright).
 

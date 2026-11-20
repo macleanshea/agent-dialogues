@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Info } from "./info";
 
 const control =
   "w-full rounded-md border border-border bg-background px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60";
@@ -20,7 +21,7 @@ export function Label({ className, ...props }: ComponentProps<"label">) {
   return <label className={cn("text-sm font-medium", className)} {...props} />;
 }
 
-/** A labelled field with optional hint and error. */
+/** A labelled field. A hint is shown behind an (i) next to the label; an error is always shown. */
 export function Field({
   label,
   htmlFor,
@@ -38,9 +39,11 @@ export function Field({
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <Label htmlFor={htmlFor}>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {hint && <Info>{hint}</Info>}
+      </div>
       {children}
-      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
       {error && (
         <p className="text-xs text-destructive" role="alert">
           {error}
@@ -68,10 +71,12 @@ export function Toggle({
         {...props}
       />
       <div className="flex flex-col gap-0.5">
-        <Label htmlFor={id} className={cn(props.disabled && "text-muted-foreground")}>
-          {label}
-        </Label>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor={id} className={cn(props.disabled && "text-muted-foreground")}>
+            {label}
+          </Label>
+          {hint && <Info>{hint}</Info>}
+        </div>
         {error && (
           <p className="text-xs text-destructive" role="alert">
             {error}

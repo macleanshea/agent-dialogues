@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { Info } from "@/components/ui/info";
 import { listFieldLibrary, listVersions } from "@/lib/analysis/service";
 import { getDb } from "@/lib/db";
 import { experiments, runs } from "@/lib/db/schema";
@@ -36,15 +37,17 @@ export default async function ReanalyzePage({ params }: PageProps<"/experiments/
             { label: "Re-analyze" },
           ]}
         />
-        <h1 className="text-2xl font-semibold tracking-tight">Re-analyze {experiment.name}</h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Creates analysis version {(latest?.version ?? 0) + 1} and codes the existing transcripts of every run in this experiment again, then
-          writes a new run report for each. No conversation is re-run. Earlier versions are kept and stay selectable on the run page. This is
-          the one change allowed after an experiment is locked, and it applies to all runs at once.
+        <h1 className="text-2xl font-semibold tracking-tight">Re-analyze: {experiment.name}</h1>
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          Creates analysis v{(latest?.version ?? 0) + 1} for every run in this experiment.
+          <Info>
+            Codes the existing transcripts of every run again, then writes a new report for each. No conversation is re-run. Earlier
+            versions are kept and stay selectable on the run page. This is the one change allowed after an experiment is locked.
+          </Info>
         </p>
         {active.length > 0 && (
           <p className="text-sm text-amber-700 dark:text-amber-300">
-            {active.length} run{active.length > 1 ? "s are" : " is"} still going and will be analyzed under the new version when finished.
+            {active.length} run{active.length > 1 ? "s" : ""} still going; analyzed under the new version when finished.
           </p>
         )}
       </div>

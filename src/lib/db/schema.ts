@@ -172,6 +172,8 @@ export interface FieldDefinitionSnapshot {
   scope: FieldScope;
   options: FieldOptions;
   definition: string;
+  /** False for custom fields. Missing on snapshots made before custom fields could be deleted. */
+  builtin?: boolean;
 }
 
 /**

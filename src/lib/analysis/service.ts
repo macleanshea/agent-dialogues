@@ -38,6 +38,7 @@ import { formatAggregates, formatCodingForReport, formatMeasuresLine, formatTran
 import type { JudgeClient } from "./judge";
 import { conversationMeasures, type MeasuredTurn } from "./measures";
 import {
+  JSON_FORMAT_NOTE,
   OPEN_TRANSCRIPT_TOOL,
   PROMPT_VERSIONS,
   RUN_REPORT_NUDGE,
@@ -98,6 +99,28 @@ export async function createCustomField(db: Db, input: unknown): Promise<CreateF
   return { ok: true, field: inserted[0] };
 }
 
+/**
+ * Deletes a custom field from the library. Built-in fields cannot be deleted.
+ * Analyses that already used it keep their own copy of its definition and
+ * their codings, so nothing already coded changes.
+ */
+export async function deleteCustomField(db: Db, name: string): Promise<boolean> {
+  const deleted = await db
+    .delete(fieldDefinitions)
+    .where(and(eq(fieldDefinitions.name, name), eq(fieldDefinitions.builtin, false)))
+    .returning({ id: fieldDefinitions.id });
+  return deleted.length > 0;
+}
+
+/** Names of the custom fields in an analysis version (from its own copies, falling back to the library). */
+export function customFieldNames(defs: FieldDefinitionSnapshot[], library: Array<{ name: string; builtin: boolean }>): Set<string> {
+  return new Set(
+    defs
+      .filter((d) => (d.builtin !== undefined ? !d.builtin : library.some((f) => f.name === d.name && !f.builtin)))
+      .map((d) => d.name),
+  );
+}
+
 /** Copies the named fields from the library, in library order. Throws on an unknown name. */
 export async function snapshotFields(db: Db, names: string[]): Promise<FieldDefinitionSnapshot[]> {
   if (names.length === 0) return [];
@@ -107,7 +130,7 @@ export async function snapshotFields(db: Db, names: string[]): Promise<FieldDefi
   if (missing.length) throw new Error(`Unknown field${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`);
   return rows
     .filter((r) => wanted.has(r.name))
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, scope: r.scope, options: r.options, definition: r.definition }));
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, scope: r.scope, options: r.options, definition: r.definition, builtin: r.builtin }));
 }
 
 // ---------- Analysis versions ----------
@@ -246,6 +269,12 @@ export function buildSummarizerPrompt(
   });
 }
 
+/** The API's answer when a JSON schema compiles to a grammar that is too large or complex. */
+export function isSchemaTooLarge(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /grammar is too large|schema is too complex|too complex for compilation/i.test(msg);
+}
+
 /** The first JSON object in a reply's text. */
 function parseJson(text: string): unknown {
   try {
@@ -299,16 +328,37 @@ export async function codeConversation(db: Db, codingIdValue: string, judge: Jud
     return "errored" as const;
   };
 
-  let res;
-  try {
-    res = await judge.call({
+  const schema = codingSchema(defs);
+  const call = (enforce: boolean) =>
+    judge.call({
       model: row.coding.model,
-      messages: [{ role: "user", content: [{ type: "text", text: prompt }] }],
+      messages: [
+        {
+          role: "user",
+          content: enforce
+            ? [{ type: "text", text: prompt }]
+            : [
+                { type: "text", text: prompt },
+                { type: "text", text: fillTemplate(JSON_FORMAT_NOTE, { json_schema: JSON.stringify(schema) }) },
+              ],
+        },
+      ],
       maxTokens: SUMMARIZER_MAX_TOKENS,
       effort: "medium",
-      outputSchema: codingSchema(defs),
+      outputSchema: enforce ? schema : undefined,
       purpose: "summarizer",
     });
+
+  let res;
+  try {
+    try {
+      res = await call(true);
+    } catch (err) {
+      // The API compiles the schema into a grammar and refuses one it finds too
+      // large. Then ask for the same JSON in words, and check it in code.
+      if (isTransientModelError(err) || !isSchemaTooLarge(err)) throw err;
+      res = await call(false);
+    }
   } catch (err) {
     if (isTransientModelError(err)) throw err;
     return fail(`Summarizer call failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -48,6 +48,16 @@ Return JSON with these fields:
 - fields: for each field in the list above, its value, turn citations, a one-sentence reason, and the first turn where the definition asks for one.`;
 
 /**
+ * Sent after the summarizer prompt, as a second text block, only when the API
+ * refuses to enforce the JSON schema (it compiles the schema into a grammar
+ * and rejects one it finds too large). The reply is then checked in code.
+ */
+export const JSON_FORMAT_NOTE = `Reply with one JSON object and nothing else: no code fences and no text before or after it. It must follow this JSON schema exactly, with every property present:
+<json_schema>
+{{json_schema}}
+</json_schema>`;
+
+/**
  * The run report prompt, drafted from the spec's rules for the run report.
  * It is sent as the first user message; the model then opens transcripts
  * with the open_transcript tool and writes the report.
@@ -137,6 +147,13 @@ export const PROMPT_CATALOG = [
     version: PROMPT_VERSIONS.summarizer,
     when: "One call per conversation. {{field_definitions}} is generated from the selected fields, and the JSON the model must return is generated from the same fields.",
     text: SUMMARIZER_PROMPT,
+  },
+  {
+    key: "jsonFormatNote",
+    title: "Summarizer: JSON format note",
+    version: PROMPT_VERSIONS.summarizer,
+    when: "Added after the summarizer prompt only if the API refuses to enforce the JSON format itself (it does this when many fields are selected). {{json_schema}} is the same format, generated from the selected fields.",
+    text: JSON_FORMAT_NOTE,
   },
   {
     key: "runReport",

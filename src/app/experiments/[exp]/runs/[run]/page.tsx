@@ -16,7 +16,7 @@ import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { formatValue, slotsFor, type FieldDef } from "@/lib/analysis/fields";
 import { PER_TURN_MEASURES } from "@/lib/analysis/measures";
 import { getRunAnalysis } from "@/lib/analysis/queries";
-import { listFieldLibrary } from "@/lib/analysis/service";
+import { customFieldNames, listFieldLibrary } from "@/lib/analysis/service";
 import { getDb } from "@/lib/db";
 import { conversationHref, conversationId, experimentId, parseIndex, runHref, runId } from "@/lib/ids";
 import { modelLabel } from "@/lib/models";
@@ -40,8 +40,12 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
   if (!page) notFound();
   const { experiment, run: r, conversations } = page;
   const analysis = await getRunAnalysis(db, r, versionParam(await searchParams));
-  const custom = new Set((await listFieldLibrary(db)).filter((f) => !f.builtin).map((f) => f.name));
+  const custom = customFieldNames(analysis.version?.fieldDefinitions ?? [], await listFieldLibrary(db));
   const defs = (analysis.version?.fieldDefinitions ?? []) as FieldDef[];
+  // The most common coding error, shown in the Analysis panel.
+  const errorCounts = new Map<string, number>();
+  for (const c of analysis.codings) if (c.coding.error) errorCounts.set(c.coding.error, (errorCounts.get(c.coding.error) ?? 0) + 1);
+  const firstError = [...errorCounts.entries()].sort((x, y) => y[1] - x[1]).map(([message, count]) => ({ message, count }))[0];
   const codingByIndex = new Map(analysis.codings.map((c) => [c.conversationIndex, c.coding]));
   const base = runHref(experiment.number, r.number);
   const v = analysis.version?.version;
@@ -155,6 +159,15 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
                     "Not analyzed under this version."
                   )}
                 </dd>
+                {firstError && (
+                  <>
+                    <dt className="text-destructive">Error</dt>
+                    <dd className="text-destructive" data-testid="coding-error">
+                      {firstError.count > 1 ? `${firstError.count} codings failed with: ` : "A coding failed with: "}
+                      {firstError.message}
+                    </dd>
+                  </>
+                )}
               </dl>
             </>
           ) : (

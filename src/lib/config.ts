@@ -83,8 +83,8 @@ export const runConfigSchema = z
 
 export type RunConfig = z.infer<typeof runConfigSchema>;
 
-/** The picker starts with the Open-ended preset ticked. */
-export const DEFAULT_FIELDS = PREDEFINED_FIELDS.filter((f) => f.presets.includes("open_ended")).map((f) => f.name);
+/** The picker starts with only topics and themes_by_turn ticked. */
+export const DEFAULT_FIELDS = ["topics", "themes_by_turn"].filter((n) => PREDEFINED_FIELDS.some((f) => f.name === n));
 
 export function defaultRunConfig(): RunConfig {
   return {

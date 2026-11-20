@@ -55,9 +55,15 @@ export function slotsFor(scope: FieldScope): Slot[] {
 
 type Json = Record<string, unknown>;
 
+/**
+ * The API compiles the schema into a grammar and rejects one that grows too
+ * large. Enums and regex patterns are what make it grow, so the schema only
+ * fixes the shape (keys and basic types). Allowed values are listed in each
+ * property's description and in the prompt, and checked in code when stored.
+ */
 export const TURNS_SCHEMA: Json = {
   type: "array",
-  items: { type: "string", pattern: "^T[0-9]+(-T[0-9]+)?$" },
+  items: { type: "string", description: 'A turn or span, like "T7" or "T7-T9".' },
 };
 
 const obj = (properties: Json, order?: string[]): Json => ({
@@ -67,8 +73,13 @@ const obj = (properties: Json, order?: string[]): Json => ({
   additionalProperties: false,
 });
 
-/** A choice from a list, or null. Uses enum (not a type union) to stay inside the API's union limit. */
-const choiceOrNull = (values: readonly (string | number)[]): Json => ({ enum: [...values, null] });
+/** A choice from a list, as a plain string. "" means none applies. */
+const choice = (values: readonly string[]): Json => ({
+  type: "string",
+  description: `One of ${JSON.stringify(values)}, or "" if none applies.`,
+});
+/** An item of a list of choices. */
+const choiceItem = (values: readonly string[]): Json => ({ type: "string", description: `One of ${JSON.stringify(values)}.` });
 
 // ---------- Aggregates ----------
 
@@ -164,7 +175,7 @@ export const FIELD_TYPES: Record<FieldType, TypeHandler> = {
   category: {
     label: "Category",
     describe: (def) => {
-      const lines = [`Values: ${(def.options.values ?? []).map((v) => JSON.stringify(v)).join(", ")}. Choose one, or null if none applies.`];
+      const lines = [`Values: ${(def.options.values ?? []).map((v) => JSON.stringify(v)).join(", ")}. Choose one, or "" if none applies.`];
       if (parts(def).length) {
         lines.push(`Give one value for each of: ${parts(def).join(", ")}.`);
       } else {
@@ -176,9 +187,9 @@ export const FIELD_TYPES: Record<FieldType, TypeHandler> = {
       return lines;
     },
     valueSchema: (def) => {
-      const choice = choiceOrNull(def.options.values ?? []);
-      if (!parts(def).length) return choice;
-      return obj(Object.fromEntries(parts(def).map((p) => [p, choice])));
+      const c = choice(def.options.values ?? []);
+      if (!parts(def).length) return c;
+      return obj(Object.fromEntries(parts(def).map((p) => [p, c])));
     },
     hasFirstTurn: (def) => parts(def).length === 0,
     normalize: (def, raw) => {
@@ -211,7 +222,7 @@ export const FIELD_TYPES: Record<FieldType, TypeHandler> = {
     describe: (def) => [
       `Values: ${(def.options.values ?? []).map((v) => JSON.stringify(v)).join(", ")}. Choose all that apply, as a list.`,
     ],
-    valueSchema: (def) => ({ type: "array", items: { enum: [...(def.options.values ?? [])] } }),
+    valueSchema: (def) => ({ type: "array", items: choiceItem(def.options.values ?? []) }),
     hasFirstTurn: () => false,
     normalize: (def, raw) =>
       Array.isArray(raw)
@@ -230,9 +241,9 @@ export const FIELD_TYPES: Record<FieldType, TypeHandler> = {
     describe: (def) => {
       const lo = def.options.minLabel ? ` (${def.options.minLabel})` : "";
       const hi = def.options.maxLabel ? ` (${def.options.maxLabel})` : "";
-      return [`Value: a whole number from 1${lo} to 5${hi}, or null if it does not apply.`];
+      return [`Value: a whole number from 1${lo} to 5${hi}, or 0 if it does not apply.`];
     },
-    valueSchema: () => choiceOrNull([1, 2, 3, 4, 5]),
+    valueSchema: () => ({ type: "integer", description: "1 to 5, or 0 if it does not apply." }),
     hasFirstTurn: () => false,
     normalize: (_d, raw) => (typeof raw === "number" && Number.isInteger(raw) && raw >= 1 && raw <= 5 ? raw : null),
     aggregate: (def, rows) => {
@@ -303,7 +314,7 @@ export const FIELD_TYPES: Record<FieldType, TypeHandler> = {
     ],
     valueSchema: (def) => ({
       type: "array",
-      items: obj({ value: { enum: [...(def.options.values ?? [])] }, from: { type: "integer" }, to: { type: "integer" } }),
+      items: obj({ value: choiceItem(def.options.values ?? []), from: { type: "integer" }, to: { type: "integer" } }),
     }),
     hasFirstTurn: () => false,
     normalize: (def, raw, maxTurn) => {
@@ -387,7 +398,7 @@ export function codingSchema(defs: FieldDef[]): Json {
   return obj({
     summary: { type: "string" },
     focus_findings: { type: "array", items: obj({ finding: { type: "string" }, turns: TURNS_SCHEMA }) },
-    notable: { type: ["string", "null"] },
+    notable: { type: "string", description: 'The single most unusual thing, or "" if nothing stands out.' },
     fields: obj(Object.fromEntries(defs.map((d) => [d.name, fieldSchema(d)]))),
   });
 }

@@ -132,12 +132,33 @@ test("the Stop button stops a running run", async ({ page }) => {
 test("analysis: field picker with a custom field, codings, aggregates, report, and re-analysis", async ({ page }) => {
   await page.goto("/runs/new");
   const picker = page.getByTestId("field-picker");
-  // The Open-ended preset is ticked by default; Scenario ticks all twenty.
-  await expect(picker.getByTestId("field-count")).toHaveText("12 selected");
+  // Only topics and themes_by_turn are ticked by default.
+  await expect(picker.getByTestId("field-count")).toHaveText("2 selected");
+  await expect(picker.getByRole("checkbox", { name: "topics" })).toBeChecked();
+  await expect(picker.getByRole("checkbox", { name: "themes_by_turn" })).toBeChecked();
   await picker.getByRole("button", { name: "Scenario" }).click();
   await expect(picker.getByTestId("field-count")).toHaveText("20 selected");
   await picker.getByRole("button", { name: "Open-ended" }).click();
   await expect(picker.getByTestId("field-count")).toHaveText("12 selected");
+  await picker.getByRole("button", { name: "Deselect all" }).click();
+  await expect(picker.getByTestId("field-count")).toHaveText("0 selected");
+  await picker.getByRole("button", { name: "Select all", exact: true }).click();
+  await expect(picker.getByTestId("field-count")).toHaveText("20 selected");
+  await picker.getByRole("button", { name: "Deselect all" }).click();
+  await picker.getByRole("checkbox", { name: "topics" }).check();
+  await picker.getByRole("checkbox", { name: "themes_by_turn" }).check();
+  await expect(picker.getByTestId("field-count")).toHaveText("2 selected");
+
+  // A custom field can be deleted (after a confirmation).
+  await picker.getByRole("button", { name: "+ New field" }).click();
+  await page.getByTestId("new-field-form").getByLabel("Name").fill("throwaway");
+  await page.getByTestId("new-field-form").getByLabel("Definition").fill("A field to delete.");
+  await page.getByTestId("new-field-form").getByRole("button", { name: "Save field" }).click();
+  await expect(picker.getByRole("checkbox", { name: "throwaway" })).toBeChecked();
+  page.once("dialog", (d) => d.accept());
+  await picker.getByRole("button", { name: "Delete throwaway" }).click();
+  await expect(picker.getByRole("checkbox", { name: "throwaway" })).toHaveCount(0);
+  await expect(picker.getByTestId("field-count")).toHaveText("2 selected");
 
   // A custom field: validation first, then saved to the library and ticked.
   await picker.getByRole("button", { name: "+ New field" }).click();
@@ -155,7 +176,7 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
   const customOption = picker.getByTestId("field-option").filter({ hasText: "greeting_style" });
   await expect(customOption).toContainText("custom");
   await expect(customOption.getByRole("checkbox")).toBeChecked();
-  await expect(picker.getByTestId("field-count")).toHaveText("13 selected");
+  await expect(picker.getByTestId("field-count")).toHaveText("3 selected");
   // Built-in fields carry no label.
   await expect(picker.getByTestId("field-option").filter({ hasText: "topics" }).getByText("custom")).toHaveCount(0);
 
@@ -178,10 +199,10 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
 
   // Aggregates by type, with the custom field among them.
   const aggs = page.getByTestId("field-aggregate");
-  await expect(aggs).toHaveCount(13);
+  await expect(aggs).toHaveCount(3);
   await expect(aggs.filter({ hasText: "greeting_style" })).toContainText("custom");
   await expect(aggs.filter({ hasText: "greeting_style" })).toContainText("of 4");
-  await expect(page.getByTestId("agg-evaluation_awareness-A")).toContainText("of 4");
+  await expect(page.getByTestId("agg-topics-all")).toContainText("of 4");
   await expect(aggs.filter({ hasText: "themes_by_turn" }).locator("svg").first()).toBeVisible();
   for (const key of ["visibleLength", "selfRepetition", "crossSimilarity", "emojiCount", "modelNamed"]) {
     await expect(page.getByTestId(`chart-${key}`).locator("svg")).toBeVisible();
@@ -194,14 +215,15 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
   const coding = page.getByTestId("coding");
   await expect(coding).toContainText("Mock summary");
   await expect(coding.getByTestId("coded-field").filter({ hasText: "greeting_style" })).toContainText("custom");
-  await expect(coding.getByTestId("coded-field")).toHaveCount(13);
+  await expect(coding.getByTestId("coded-field")).toHaveCount(3);
   await expect(page.getByTestId("turn-measures").first()).toContainText("emoji and symbols");
 
   // Prompts are shown read-only.
   await page.getByRole("link", { name: "Prompts" }).first().click();
   await expect(page.getByRole("heading", { name: "Prompts" })).toBeVisible();
   await expect(page.getByTestId("prompt").first()).toContainText("You are coding one transcript of a conversation between two AI agents");
-  await expect(page.getByTestId("prompt").nth(1)).toContainText("open_transcript");
+  await expect(page.getByTestId("prompt").nth(1)).toContainText("JSON format note");
+  await expect(page.getByTestId("prompt").nth(2)).toContainText("open_transcript");
 
   // Re-analysis: a new version with different fields; the old one stays selectable.
   await page.goto(runUrl);
@@ -215,10 +237,11 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
   await expect(page.getByTestId("coding-status")).toContainText("4 of 4 conversations coded", { timeout: 45_000 });
   await expect(page.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
   await expect(page.getByTestId("field-aggregate")).toHaveCount(20);
+  await expect(page.getByTestId("agg-evaluation_awareness-A")).toContainText("of 4");
   await expect(page.getByTestId("analysis-panel")).toContainText("Look for disagreement.");
   await page.getByTestId("version-picker").getByRole("link", { name: "v1" }).click();
   await expect(page).toHaveURL(/\?v=1$/);
-  await expect(page.getByTestId("field-aggregate")).toHaveCount(13);
+  await expect(page.getByTestId("field-aggregate")).toHaveCount(3);
   await expect(page.getByTestId("analysis-panel")).toContainText("Watch how the agents greet each other.");
 });
 

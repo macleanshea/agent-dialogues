@@ -25,6 +25,8 @@ import {
   buildSummarizerPrompt,
   createAnalysisVersion,
   createCustomField,
+  customFieldNames,
+  deleteCustomField,
   listFieldLibrary,
   openTranscript,
   snapshotFields,
@@ -82,8 +84,56 @@ describe("the summarizer schema and prompt", () => {
     const defs = PREDEFINED_FIELDS as unknown as FieldDef[];
     const stats = schemaStats(codingSchema(defs));
     expect(stats.optional).toBe(0);
-    expect(stats.unions).toBeLessThanOrEqual(16);
+    expect(stats.unions).toBe(0);
     expect(stats.openObjects).toBe(0);
+  });
+
+  it("keeps the schema's grammar small: no enums, patterns, or type unions", () => {
+    const json = JSON.stringify(codingSchema(PREDEFINED_FIELDS as unknown as FieldDef[]));
+    expect(json).not.toContain('"enum"');
+    expect(json).not.toContain('"pattern"');
+    expect(json).not.toContain('"anyOf"');
+    expect(json).not.toMatch(/"type":\[/);
+    // Allowed values still travel with the schema, as descriptions.
+    expect(json).toContain('One of [\\"none\\",\\"brief\\",\\"sustained\\"]');
+  });
+
+  it("asks for the JSON in words when the API says the schema's grammar is too large", async () => {
+    const created = await createStandaloneRun(db, config({ conversations: 2, fields: ALL_BUILTIN }));
+    await executeRunInProcess(db, created.runId, mockClient);
+    const seen: Array<{ enforced: boolean; blocks: number }> = [];
+    const strictRefused: JudgeClient = {
+      async call(req) {
+        if (req.purpose === "summarizer") {
+          seen.push({ enforced: Boolean(req.outputSchema), blocks: req.messages[0].content.length });
+          if (req.outputSchema) {
+            throw new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools."}}');
+          }
+        }
+        return mockJudge.call(req);
+      },
+    };
+    await analyzeRunInProcess(db, created.runId, strictRefused);
+    expect(seen).toEqual([
+      { enforced: true, blocks: 1 },
+      { enforced: false, blocks: 2 },
+      { enforced: true, blocks: 1 },
+      { enforced: false, blocks: 2 },
+    ]);
+    const rows = await db.select().from(codings);
+    expect(rows.every((r) => r.status === "done")).toBe(true);
+    expect(Object.keys(rows[0].output!.fields)).toHaveLength(20);
+    const [report] = await db.select().from(reports);
+    expect(report.status).toBe("done");
+  });
+
+  it("does not retry other request errors without the schema", async () => {
+    const created = await createStandaloneRun(db, config({ conversations: 1, turns: 2 }));
+    await executeRunInProcess(db, created.runId, mockClient);
+    let calls = 0;
+    const bad: JudgeClient = { call: async () => { calls++; throw new Error("400 invalid model"); } };
+    await analyzeRunInProcess(db, created.runId, bad);
+    expect(calls).toBe(1);
   });
 
   it("uses the spec's summarizer prompt verbatim and fills every placeholder", async () => {
@@ -135,7 +185,7 @@ describe("the summarizer schema and prompt", () => {
   });
 
   it("lists every prompt for the read-only Prompts page", () => {
-    expect(PROMPT_CATALOG.map((p) => p.key)).toEqual(["summarizer", "runReport", "runReportNudge", "openTranscriptTool"]);
+    expect(PROMPT_CATALOG.map((p) => p.key)).toEqual(["summarizer", "jsonFormatNote", "runReport", "runReportNudge", "openTranscriptTool"]);
   });
 });
 
@@ -209,6 +259,28 @@ describe("custom fields go through the same code path as built-in ones", () => {
       }
       for (const s of c.slots) for (const a of s.aggregates) expect((a as { n: number }).n).toBe(3);
     }
+  });
+
+  it("deletes a custom field from the library, but never a built-in one, and keeps earlier analyses intact", async () => {
+    expect((await createCustomField(db, { name: "mentions_weather", type: "yes_no", scope: "conversation", group: "Content", definition: "Weather comes up." })).ok).toBe(true);
+    const created = await runAndAnalyze(config({ conversations: 1, turns: 2, fields: ["topics", "mentions_weather"] }));
+    expect(await deleteCustomField(db, "topics")).toBe(false);
+    expect(await deleteCustomField(db, "mentions_weather")).toBe(true);
+    expect(await deleteCustomField(db, "mentions_weather")).toBe(false);
+    const library = await listFieldLibrary(db);
+    expect(library.map((f) => f.name)).not.toContain("mentions_weather");
+    expect(library).toHaveLength(20);
+    // The analysis that used it still has its copy, still marked custom, and its coded values.
+    const [version] = await db.select().from(analysisVersions).where(eq(analysisVersions.experimentId, created.experimentId));
+    expect(customFieldNames(version.fieldDefinitions, library)).toEqual(new Set(["mentions_weather"]));
+    const [coding] = await db.select().from(codings);
+    expect(coding.output!.fields.mentions_weather.all).toBeDefined();
+    // The name can be used again.
+    expect((await createCustomField(db, { name: "mentions_weather", type: "tags", scope: "conversation", group: "Content", definition: "Weather words." })).ok).toBe(true);
+  });
+
+  it("ticks only topics and themes_by_turn by default", () => {
+    expect(defaultRunConfig().fields).toEqual(["topics", "themes_by_turn"]);
   });
 
   it("rejects invalid custom fields", async () => {

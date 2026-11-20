@@ -96,6 +96,12 @@ export function fakeFromSchema(schema: Record<string, unknown>, ctx: { seed: num
     const choices = (schema.enum as unknown[]).filter((v) => v !== null);
     return choices.length ? choices[h % choices.length] : null;
   }
+  // Allowed values are listed in the description, as the real model reads them.
+  const listed = typeof schema.description === "string" ? /One of (\[.*\])/.exec(schema.description)?.[1] : undefined;
+  if (listed && schema.type === "string") {
+    const choices = JSON.parse(listed) as string[];
+    return choices[h % choices.length];
+  }
   const type = Array.isArray(schema.type) ? (schema.type as string[]).find((t) => t !== "null") : schema.type;
   const key = path.split(".").pop() ?? "";
   switch (type) {
@@ -105,9 +111,9 @@ export function fakeFromSchema(schema: Record<string, unknown>, ctx: { seed: num
     case "number":
       if (key === "first_turn" || key === "change_turn" || key === "from") return turn;
       if (key === "to") return Math.min(ctx.maxTurn, turn + (h % 3));
-      return 1;
+      return 1 + (h % 5);
     case "string":
-      if (schema.pattern) return `T${turn}`;
+      if (schema.pattern || /"T7"/.test(String(schema.description ?? ""))) return `T${turn}`;
       if (key === "summary") return `Mock summary. The agents opened by greeting each other [T1] and continued for ${ctx.maxTurn} turns.`;
       if (key === "reason") return `Mock reason, based on [T${turn}].`;
       if (key === "finding") return `Mock finding at [T${turn}].`;
@@ -117,7 +123,7 @@ export function fakeFromSchema(schema: Record<string, unknown>, ctx: { seed: num
       const items = (schema.items ?? {}) as Record<string, unknown>;
       const n = 1 + (h % 2);
       const out = Array.from({ length: n }, (_, i) => fakeFromSchema(items, ctx, `${path}[${i}]`));
-      return Array.isArray(items.enum) ? [...new Set(out)] : out;
+      return Array.isArray(items.enum) || /One of/.test(String(items.description ?? "")) ? [...new Set(out)] : out;
     }
     case "object": {
       const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
@@ -134,7 +140,10 @@ function mockSummarizer(req: JudgeRequest): JudgeResponse {
   const prompt = req.messages.map(textOf).join("\n");
   const turnNumbers = [...prompt.matchAll(/^\[T(\d+)\]/gm)].map((m) => Number(m[1]));
   const maxTurn = Math.max(1, ...turnNumbers);
-  const value = fakeFromSchema(req.outputSchema ?? { type: "object", properties: {} }, { seed: hash(prompt), maxTurn });
+  // Without an enforced schema, the format note carries the schema in the prompt.
+  const noted = /<json_schema>\n([\s\S]*?)\n<\/json_schema>/.exec(prompt)?.[1];
+  const schema = req.outputSchema ?? (noted ? (JSON.parse(noted) as Record<string, unknown>) : { type: "object", properties: {} });
+  const value = fakeFromSchema(schema, { seed: hash(prompt), maxTurn });
   return {
     content: [
       { type: "thinking", thinking: "Mock judge reads the transcript.", signature: "mock-judge" },

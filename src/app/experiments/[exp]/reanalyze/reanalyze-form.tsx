@@ -30,7 +30,7 @@ export function ReanalyzeForm({ experimentNumber, initial, fields }: { experimen
       <Card>
         <CardHeader title="Analysis" description="Pre-filled from the latest analysis version." />
         <CardBody className="flex flex-col gap-5">
-          <Field label="Analysis focus" htmlFor="focus" hint="One to three sentences on what to look for." error={state.errors.focus}>
+          <Field label="Analysis focus" htmlFor="focus" hint="Free text the judge and report writer read. It produces findings, not counts. To count something, tick or add a field." error={state.errors.focus}>
             <Textarea id="focus" rows={2} className="font-sans text-sm" value={v.focus} onChange={(e) => set("focus", e.target.value)} />
           </Field>
           <FieldPicker fields={fields} selected={v.fields} onChange={(names) => set("fields", names)} error={state.errors.fields} />

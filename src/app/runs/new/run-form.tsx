@@ -294,7 +294,7 @@ export function RunForm({ initial, fields }: { initial: RunConfig; fields: Picke
           <Field
             label="Analysis focus"
             htmlFor="focus"
-            hint="One to three sentences on what to look for."
+            hint="One to three sentences, in your own words, on what to look for. The judge reads it and lists findings on it for each conversation, and the run report gives it its own section. It is free text: it is not counted or charted. To count something across conversations, tick or add a field below."
             error={err("analysisFocus")}
           >
             <Textarea

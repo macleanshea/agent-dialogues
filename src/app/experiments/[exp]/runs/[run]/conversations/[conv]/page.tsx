@@ -26,7 +26,7 @@ import { VersionPicker, versionParam } from "@/components/analysis/version-picke
 import type { FieldDef } from "@/lib/analysis/fields";
 import { conversationMeasures } from "@/lib/analysis/measures";
 import { getConversationCoding } from "@/lib/analysis/queries";
-import { listFieldLibrary } from "@/lib/analysis/service";
+import { customFieldNames, listFieldLibrary } from "@/lib/analysis/service";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,7 @@ export default async function ConversationPage({
   const { experiment, run: r, conversation: c, turns } = page;
   const cfg = r.config;
   const analysis = await getConversationCoding(db, c, experiment.id, versionParam(await searchParams));
-  const custom = new Set((await listFieldLibrary(db)).filter((f) => !f.builtin).map((f) => f.name));
+  const custom = customFieldNames(analysis.version?.fieldDefinitions ?? [], await listFieldLibrary(db));
   const measures = conversationMeasures(c, turns);
   const pct = (x: number | null) => (x === null ? "—" : `${Math.round(x * 100)}%`);
   const here = conversationHref(experiment.number, r.number, c.index);

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createFieldAction } from "@/app/fields/actions";
+import { createFieldAction, deleteFieldAction } from "@/app/fields/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
-import { FIELD_GROUPS, PRESETS, type FieldType, type PresetKey } from "@/lib/fields/library";
+import { FIELD_GROUPS, PREDEFINED_FIELDS, PRESETS, type FieldType, type PresetKey } from "@/lib/fields/library";
 import type { PickerField } from "@/lib/fields/picker";
 
 const TYPE_LABELS: Record<FieldType, string> = {
@@ -19,6 +19,15 @@ const TYPE_LABELS: Record<FieldType, string> = {
 };
 
 const NEEDS_VALUES: FieldType[] = ["category", "multi_select", "turn_ranges"];
+
+const PRESET_HINTS: Record<PresetKey, string> = {
+  open_ended: "Tick the 12 fields for conversations with little or no prompting.",
+  scenario: "Tick all 20 built-in fields, including conduct, for agents with private instructions.",
+};
+const PRESET_COUNTS = {
+  open_ended: PREDEFINED_FIELDS.filter((f) => f.presets.includes("open_ended")).length,
+  scenario: PREDEFINED_FIELDS.filter((f) => f.presets.includes("scenario")).length,
+};
 
 function describeOptions(f: PickerField): string {
   const o = f.options;
@@ -150,6 +159,7 @@ export function FieldPicker({
 }) {
   const [fields, setFields] = useState(initialFields);
   const [adding, setAdding] = useState(false);
+  const [deleting, startDelete] = useTransition();
   const chosen = new Set(selected);
   const groups = [...FIELD_GROUPS, ...new Set(fields.map((f) => f.group).filter((g) => !(FIELD_GROUPS as string[]).includes(g)))];
 
@@ -161,6 +171,15 @@ export function FieldPicker({
     onChange(fields.map((f) => f.name).filter((n) => next.has(n)));
   };
   const preset = (key: PresetKey) => onChange(fields.filter((f) => f.presets.includes(key)).map((f) => f.name));
+  const remove = (f: PickerField) => {
+    if (!window.confirm(`Delete the custom field "${f.name}" from the library? Analyses that already used it keep their copy and their codings.`)) return;
+    startDelete(async () => {
+      const r = await deleteFieldAction(f.name);
+      if (!r.ok) return;
+      setFields((prev) => prev.filter((x) => x.name !== f.name));
+      onChange(selected.filter((n) => n !== f.name));
+    });
+  };
 
   return (
     <div className="flex flex-col gap-4" data-testid="field-picker">
@@ -170,8 +189,14 @@ export function FieldPicker({
           {selected.length} selected
         </span>
         <div className="ml-auto flex flex-wrap gap-2">
+          <Button type="button" variant="ghost" onClick={() => onChange(fields.map((f) => f.name))}>
+            Select all
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => onChange([])}>
+            Deselect all
+          </Button>
           {(Object.keys(PRESETS) as PresetKey[]).map((k) => (
-            <Button key={k} type="button" variant="secondary" onClick={() => preset(k)}>
+            <Button key={k} type="button" variant="secondary" onClick={() => preset(k)} title={PRESET_HINTS[k]}>
               {PRESETS[k]}
             </Button>
           ))}
@@ -180,9 +205,19 @@ export function FieldPicker({
           </Button>
         </div>
       </div>
-      <p className="-mt-2 text-xs text-muted-foreground">
-        Every conversation is also given a summary, findings on the analysis focus, and the most notable thing, whatever is ticked.
-      </p>
+      <div className="-mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
+        <p>
+          Each ticked field is a question the judge answers the same way for every conversation, so the answers can be counted and charted
+          across the run. Every conversation also gets a summary, findings on the analysis focus, and the most notable thing, whatever is ticked.
+        </p>
+        <p>
+          Presets replace the ticks: <strong className="font-medium">Open-ended</strong> ticks {PRESET_COUNTS.open_ended} fields for conversations with
+          little or no prompting (what was discussed, how the agents talk about themselves and each other, how the conversation moves and ends).{" "}
+          <strong className="font-medium">Scenario</strong> ticks all {PRESET_COUNTS.scenario} built-in fields, adding agreement, position changes, and
+          the conduct fields (deception, suspicion, goals, disclosure, objections, coordination) for runs where the agents hold different private
+          instructions.
+        </p>
+      </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {adding && (
         <NewFieldForm
@@ -214,6 +249,20 @@ export function FieldPicker({
                     <span className="flex flex-wrap items-center gap-1.5">
                       <span className="font-mono text-sm">{f.name}</span>
                       {!f.builtin && <Badge>custom</Badge>}
+                      {!f.builtin && (
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground underline hover:text-destructive disabled:opacity-50"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            remove(f);
+                          }}
+                          disabled={deleting}
+                          aria-label={`Delete ${f.name}`}
+                        >
+                          delete
+                        </button>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         {TYPE_LABELS[f.type]} · {f.scope === "per_speaker" ? "per speaker" : "conversation"}
                       </span>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { Markdown } from "@/components/markdown";
 import { StatusBadge, stopReasonLabel } from "@/components/status";
@@ -38,6 +39,8 @@ export default async function ConversationPage({
 
   const truncated = turns.filter((t) => t.truncated).length;
   const empty = turns.filter((t) => t.placeholderUsed).length;
+  const live =
+    c.status === "running" || (c.status === "pending" && (r.status === "queued" || r.status === "running"));
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,6 +56,7 @@ export default async function ConversationPage({
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Conversation {conversationId(c.index)}</h1>
           <StatusBadge status={c.status} />
+          <AutoRefresh active={live} />
         </div>
         <p className="text-sm text-muted-foreground">
           {experiment.name} · A: {modelLabel(cfg.agentA.model)} · B: {modelLabel(cfg.agentB.model)}
@@ -71,7 +75,12 @@ export default async function ConversationPage({
             <span className="text-muted-foreground">Empty replies:</span> {empty}
           </span>
           <span>
-            <span className="text-muted-foreground">Tokens in / out / thinking:</span> {formatNumber(c.inputTokens)} /{" "}
+            <span className="text-muted-foreground">Repetition flagged:</span>{" "}
+            {c.repetitionFlagTurn ? `T${c.repetitionFlagTurn}` : "no"}
+          </span>
+          <span>
+            <span className="text-muted-foreground">Tokens in / cached read / cache write / out / thinking:</span>{" "}
+            {formatNumber(c.inputTokens)} / {formatNumber(c.cacheReadTokens)} / {formatNumber(c.cacheWriteTokens)} /{" "}
             {formatNumber(c.outputTokens)} / {formatNumber(c.thinkingTokens)}
           </span>
           <span>
@@ -125,6 +134,11 @@ export default async function ConversationPage({
                   {t.attempts > 1 && <Badge tone="warning">retried at {formatNumber(t.maxTokensUsed)} max tokens</Badge>}
                   {t.placeholderUsed && <Badge tone="warning">empty reply, other agent saw “{NO_REPLY_PLACEHOLDER}”</Badge>}
                   {t.stopReason !== "end_turn" && <Badge tone="neutral">stop: {t.stopReason}</Badge>}
+                  {t.repetition !== null && t.repetition >= cfg.repetitionThreshold && (
+                    <Badge tone="warning">repeats {Math.round(t.repetition * 100)}% of its last message</Badge>
+                  )}
+                  {c.repetitionFlagTurn === t.turnNumber && <Badge tone="warning">repetition flagged here</Badge>}
+                  {t.signedOff && <Badge tone="info">signed off [END]</Badge>}
                   <span className="ml-auto font-mono text-muted-foreground">
                     {citation(r.number, c.index, t.turnNumber)}
                   </span>
@@ -147,15 +161,17 @@ export default async function ConversationPage({
 
                 <div className="text-xs text-muted-foreground tabular-nums">
                   {formatNumber(t.text.length)} chars · in {formatNumber(t.inputTokens)} · out{" "}
-                  {formatNumber(t.outputTokens)} (thinking {formatNumber(t.thinkingTokens)}) · cached{" "}
-                  {formatNumber(t.cacheReadTokens)} · {formatUsd(t.costUsd)}
+                  {formatNumber(t.outputTokens)} (thinking {formatNumber(t.thinkingTokens)}) · cached read{" "}
+                  {formatNumber(t.cacheReadTokens)} · cache write {formatNumber(t.cacheWriteTokens)} · {formatUsd(t.costUsd)}
                 </div>
               </CardBody>
             </Card>
           </li>
         ))}
       </ol>
-      {turns.length === 0 && <p className="text-sm text-muted-foreground">No turns recorded.</p>}
+      {turns.length === 0 && (
+        <p className="text-sm text-muted-foreground">{live ? "Waiting for the first turn…" : "No turns recorded."}</p>
+      )}
     </div>
   );
 }

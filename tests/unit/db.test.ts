@@ -5,14 +5,11 @@ import { migrateAndSeed, seedFieldLibrary } from "@/lib/db/migrate";
 import { analysisVersions, conversations, experiments, fieldDefinitions, runs, turns } from "@/lib/db/schema";
 import { defaultRunConfig } from "@/lib/config";
 import { mockClient } from "@/lib/engine/mock";
-import {
-  createStandaloneRun,
-  executeRun,
-  getConversationPage,
-  getRunPage,
-  listExperiments,
-  saveTurn,
-} from "@/lib/runs/service";
+import { executeRunInProcess, saveTurn } from "@/lib/runs/execution";
+import { createStandaloneRun, getConversationPage, getRunPage, listExperiments } from "@/lib/runs/service";
+
+const executeRun = (d: Db, runId: string, client: Parameters<typeof executeRunInProcess>[2] = mockClient) =>
+  executeRunInProcess(d, runId, client);
 
 let db: Db;
 
@@ -84,6 +81,7 @@ describe("database", () => {
     const again = await saveTurn(db, page!.conversation.id, {
       turnNumber: 1, speaker: "A", model: "mock", text: "dupe", thinkingSummary: null, content: [],
       stopReason: "end_turn", rawUsage: null, costUsd: 0, truncated: false, placeholderUsed: false, attempts: 1, maxTokensUsed: 1,
+      repetition: null, repetitionTriggered: false, signedOff: false,
       usage: { inputTokens: 999, outputTokens: 999, thinkingTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
     });
     expect(again).toBe(false);

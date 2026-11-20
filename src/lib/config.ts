@@ -18,7 +18,7 @@ export const LIMITS = {
 const knownModel = z.string().refine((id) => getModel(id) !== undefined, "Unknown model");
 const agentModel = knownModel.refine(
   (id) => getModel(id)?.agentReady === true,
-  "This model is not available yet. In this version only the Mock model can run.",
+  "This model cannot be used for agents.",
 );
 
 /** Treats an empty form input as missing, so it reports "Required" rather than 0. */

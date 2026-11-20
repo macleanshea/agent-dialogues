@@ -40,6 +40,28 @@ export function textForOtherAgent(content: ContentBlock[]): { blocks: TextBlock[
   return { blocks: [{ type: "text", text }], placeholderUsed: false };
 }
 
+/**
+ * An agent's own earlier turn, as it is replayed to that agent.
+ *
+ * The raw blocks are replayed unchanged, with one exception the API forces:
+ * a text block must hold at least one character (and whitespace-only text is
+ * treated the same way), so an empty text block cannot be sent back. For a
+ * turn with no visible text we drop those empty text blocks and add the
+ * placeholder as a text block after the thinking, so the agent sees the same
+ * "[no reply]" the other agent saw. Thinking blocks are never touched, and the
+ * result depends only on the stored turn, so every later request sends the
+ * same bytes (the history stays append-only from the API's point of view).
+ */
+export function ownTurnForReplay(content: ContentBlock[]): ContentBlock[] {
+  const isBlankText = (b: ContentBlock) => isTextBlock(b) && b.text.trim().length === 0;
+  if (!content.some(isBlankText) && visibleText(content).trim().length > 0) return content;
+  const kept = content.filter((b) => !isBlankText(b));
+  if (visibleText(kept).trim().length === 0) {
+    kept.push({ type: "text", text: NO_REPLY_PLACEHOLDER });
+  }
+  return kept;
+}
+
 export interface HistoryInput {
   speaker: Speaker;
   openingMessage: string;
@@ -51,7 +73,8 @@ export interface HistoryInput {
 /**
  * Builds the message list one agent sees before it speaks.
  *
- * - Its own turns are assistant messages that replay the raw content blocks.
+ * - Its own turns are assistant messages that replay the raw content blocks
+ *   (see ownTurnForReplay for the one exception, empty replies).
  * - The other agent's turns are user messages with text only.
  * - A starts with the opening message as a user turn.
  * - B never sees the opening message, unless it is attributed to B, in which
@@ -72,7 +95,7 @@ export function buildHistory(input: HistoryInput): AgentMessage[] {
 
   for (const turn of input.turns) {
     if (turn.speaker === input.speaker) {
-      messages.push({ role: "assistant", content: turn.content });
+      messages.push({ role: "assistant", content: ownTurnForReplay(turn.content) });
     } else {
       messages.push({ role: "user", content: textForOtherAgent(turn.content).blocks });
     }

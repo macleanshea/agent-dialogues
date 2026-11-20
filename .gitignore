@@ -44,3 +44,7 @@ next-env.d.ts
 /.pglite*
 /test-results/
 /playwright-report/
+/.swc
+
+# Vercel Workflow: local run data and generated routes
+/.workflow-data*

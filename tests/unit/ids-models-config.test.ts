@@ -100,9 +100,11 @@ describe("run config", () => {
     expect(errorsFor({ attributeOpeningToB: true, openingMessage: "Hello there." })).toEqual([]);
   });
 
-  it("only allows the mock for agents in this version", () => {
+  it("allows every listed model for agents, and rejects unknown ones", () => {
     const c = defaultRunConfig();
-    expect(errorsFor({ agentA: { ...c.agentA, model: "claude-opus-5-5" } })).toContain("agentA.model");
+    for (const model of ["mock", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-2"]) {
+      expect(errorsFor({ agentA: { ...c.agentA, model }, agentB: { ...c.agentB, model } })).toEqual([]);
+    }
     expect(errorsFor({ agentA: { ...c.agentA, model: "gpt" } })).toContain("agentA.model");
   });
 

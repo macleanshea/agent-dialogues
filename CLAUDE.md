@@ -22,10 +22,11 @@
 
 - `src/lib/models.ts`: model IDs and prices (the one config file for both).
 - `src/lib/config.ts`: run settings, defaults, limits, and validation.
-- `src/lib/engine/`: the conversation engine (history building, the turn loop, the Mock model).
+- `src/lib/engine/`: the conversation engine (history building, one turn per call, stop rules, the Mock model, the Anthropic client).
 - `src/lib/db/`: database schema (`schema.ts`), connection, and migrations runner. SQL migrations live in `drizzle/`.
 - `src/lib/fields/library.ts`: the predefined analysis fields, seeded into the database.
-- `src/lib/runs/service.ts`: creating and executing runs, and the page queries.
+- `src/lib/runs/service.ts`: creating runs, and the page queries.
+- `src/lib/runs/execution.ts`: executing runs one model call at a time (cost ceiling, Stop, finishing). `src/workflows/run.ts`: the Vercel Workflow that calls it.
 - `src/app/`: pages. `src/components/ui/`: the small component library.
 - `tests/unit/`: unit and database tests (Vitest). `tests/e2e/`: click-through tests (Playwright).
 

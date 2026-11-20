@@ -1,10 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { start } from "workflow/api";
 import { runConfigSchema } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { runHref } from "@/lib/ids";
-import { createStandaloneRun, executeRun } from "@/lib/runs/service";
+import { getModel } from "@/lib/models";
+import { failRunToStart, recordWorkflowRun } from "@/lib/runs/execution";
+import { createStandaloneRun } from "@/lib/runs/service";
+import { runWorkflow } from "@/workflows/run";
 
 export interface RunFormState {
   /** Error messages keyed by setting path, e.g. "agentA.model". */
@@ -13,8 +17,9 @@ export interface RunFormState {
 }
 
 /**
- * Creates the run and, in this version, executes it in mock mode before
- * responding. No login check: Vercel Authentication protects every deployment.
+ * Creates the run, starts its workflow in the background, and opens the run
+ * page, which refreshes itself while the run is going. No login check: Vercel
+ * Authentication protects every deployment.
  */
 export async function createRunAction(_prev: RunFormState, formData: FormData): Promise<RunFormState> {
   let raw: unknown;
@@ -34,8 +39,22 @@ export async function createRunAction(_prev: RunFormState, formData: FormData): 
     return { errors, message: "Some settings need fixing. See the messages next to each field." };
   }
 
+  const usesApi = [parsed.data.agentA.model, parsed.data.agentB.model].some((m) => getModel(m)?.kind === "anthropic");
+  if (usesApi && !process.env.ANTHROPIC_API_KEY) {
+    return {
+      errors: {},
+      message: "ANTHROPIC_API_KEY is not set for this deployment, so only the Mock model can run. Add the key in Vercel and redeploy.",
+    };
+  }
+
   const db = await getDb();
   const created = await createStandaloneRun(db, parsed.data);
-  await executeRun(db, created.runId);
+  try {
+    const run = await start(runWorkflow, [created.runId]);
+    await recordWorkflowRun(db, created.runId, run.runId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await failRunToStart(db, created.runId, `The run could not be started: ${msg}`);
+  }
   redirect(runHref(created.experimentNumber, created.runNumber));
 }

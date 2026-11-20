@@ -341,13 +341,8 @@ export function RunForm({ initial }: { initial: RunConfig }) {
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={pending}>
-          {pending ? "Running…" : "Start run"}
+          {pending ? "Starting…" : "Start run"}
         </Button>
-        {pending && (
-          <p className="text-sm text-muted-foreground">
-            Running all conversations. The run page opens when they finish.
-          </p>
-        )}
         {state.message && !pending && (
           <p className="text-sm text-destructive" role="alert">
             {state.message}

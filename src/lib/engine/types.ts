@@ -52,6 +52,26 @@ export interface ModelClient {
   call(req: ModelRequest): Promise<ModelResponse>;
 }
 
+/**
+ * A model call failed in a way that is worth retrying later: a rate limit
+ * (429), an overloaded or failing server (5xx, 529), or a dropped connection.
+ * The engine never swallows it; the caller (a Workflow step) retries it,
+ * waiting at least `retryAfterMs` when the API said how long to wait.
+ * Any other error from a model call ends the conversation as errored.
+ */
+export class TransientModelError extends Error {
+  readonly retryAfterMs: number | null;
+  constructor(message: string, retryAfterMs: number | null = null) {
+    super(message);
+    this.name = "TransientModelError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+export function isTransientModelError(err: unknown): err is TransientModelError {
+  return err instanceof TransientModelError || (err instanceof Error && err.name === "TransientModelError");
+}
+
 /** A stored turn, as the engine needs it to rebuild histories. */
 export interface TurnRecord {
   turnNumber: number;

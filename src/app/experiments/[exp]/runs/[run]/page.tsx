@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AutoRefresh } from "@/components/auto-refresh";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { CostMeter } from "@/components/cost-meter";
+import { StopButton } from "@/components/stop-button";
 import { RunConfigView } from "@/components/run-config";
 import { StatusBadge, stopReasonLabel } from "@/components/status";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -9,6 +12,7 @@ import { getDb } from "@/lib/db";
 import { conversationHref, conversationId, experimentId, parseIndex, runId } from "@/lib/ids";
 import { getRunPage } from "@/lib/runs/service";
 import { formatDateTime, formatNumber, formatUsd } from "@/lib/utils";
+import { stopRunAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +28,19 @@ export default async function RunPage({ params }: PageProps<"/experiments/[exp]/
   const done = conversations.filter((c) => c.status === "done").length;
   const errored = conversations.filter((c) => c.status === "errored").length;
   const turns = conversations.reduce((s, c) => s + c.turnsCompleted, 0);
+  const sum = (k: "inputTokens" | "cacheReadTokens" | "cacheWriteTokens" | "outputTokens" | "thinkingTokens") =>
+    conversations.reduce((s, c) => s + c[k], 0);
+  const totals = {
+    inputTokens: sum("inputTokens"),
+    cacheReadTokens: sum("cacheReadTokens"),
+    cacheWriteTokens: sum("cacheWriteTokens"),
+    outputTokens: sum("outputTokens"),
+    thinkingTokens: sum("thinkingTokens"),
+  };
+  const runActive = r.status === "queued" || r.status === "running";
+  // Keep refreshing until every conversation has ended, including after Stop.
+  const live = runActive || conversations.some((c) => c.status === "running");
+  const stop = stopRunAction.bind(null, experiment.number, r.number);
 
   return (
     <div className="flex flex-col gap-6">
@@ -34,12 +51,23 @@ export default async function RunPage({ params }: PageProps<"/experiments/[exp]/
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{experiment.name}</h1>
           <StatusBadge status={r.status} />
+          <AutoRefresh active={live} />
+          {runActive && (
+            <div className="ml-auto">
+              <StopButton onStop={stop} />
+            </div>
+          )}
         </div>
         <p className="text-sm text-muted-foreground">
           {experimentId(experiment.number)} / {runId(r.number)} · Started {formatDateTime(r.startedAt)} · Cost{" "}
           {formatUsd(r.costUsd)}
         </p>
         {r.error && <p className="text-sm text-destructive">{r.error}</p>}
+        {r.stopRequested && live && (
+          <p className="text-sm text-muted-foreground">
+            Stopping. Conversations that are mid-call finish that call, keep the turn, and then stop.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
@@ -56,6 +84,8 @@ export default async function RunPage({ params }: PageProps<"/experiments/[exp]/
         ))}
       </div>
 
+      <CostMeter costUsd={r.costUsd} ceilingUsd={r.config.costCeilingUsd} totals={totals} />
+
       <Card>
         <CardHeader title="Conversations" description="Click a conversation to read its transcript." />
         <Table>
@@ -65,7 +95,9 @@ export default async function RunPage({ params }: PageProps<"/experiments/[exp]/
               <Th>Status</Th>
               <Th>Stop reason</Th>
               <Th className="text-right">Turns</Th>
+              <Th>Repetition</Th>
               <Th className="text-right">Input tokens</Th>
+              <Th className="text-right">Cached read</Th>
               <Th className="text-right">Output tokens</Th>
               <Th className="text-right">Thinking tokens</Th>
               <Th className="text-right">Cost</Th>
@@ -87,7 +119,11 @@ export default async function RunPage({ params }: PageProps<"/experiments/[exp]/
                   {c.error && <div className="mt-0.5 max-w-sm text-xs text-destructive">{c.error}</div>}
                 </Td>
                 <Td className="text-right tabular-nums">{c.turnsCompleted}</Td>
+                <Td className="whitespace-nowrap">
+                  {c.repetitionFlagTurn ? <span className="text-amber-700 dark:text-amber-300">Flagged at T{c.repetitionFlagTurn}</span> : "—"}
+                </Td>
                 <Td className="text-right tabular-nums">{formatNumber(c.inputTokens)}</Td>
+                <Td className="text-right tabular-nums">{formatNumber(c.cacheReadTokens)}</Td>
                 <Td className="text-right tabular-nums">{formatNumber(c.outputTokens)}</Td>
                 <Td className="text-right tabular-nums">{formatNumber(c.thinkingTokens)}</Td>
                 <Td className="text-right tabular-nums">{formatUsd(c.costUsd)}</Td>

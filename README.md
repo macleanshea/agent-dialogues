@@ -12,6 +12,8 @@ npm run dev
 
 Without `DATABASE_URL`, the app uses a local in-process Postgres stored in `.pglite/`. Delete that folder to start fresh.
 
+Runs execute in the background with Vercel Workflow. Locally, Workflow keeps its own state in `.workflow-data/`; `npx workflow web` shows the local runs. The Mock model needs nothing else. To use real models locally, set `ANTHROPIC_API_KEY`.
+
 ## Tests
 
 ```bash

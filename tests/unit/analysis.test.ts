@@ -185,7 +185,12 @@ describe("the summarizer schema and prompt", () => {
   });
 
   it("lists every prompt for the read-only Prompts page", () => {
-    expect(PROMPT_CATALOG.map((p) => p.key)).toEqual(["summarizer", "jsonFormatNote", "runReport", "runReportNudge", "openTranscriptTool"]);
+    expect(PROMPT_CATALOG.map((p) => p.key)).toEqual([
+      "summarizer", "jsonFormatNote", "runReport", "runReportNudge", "openTranscriptTool",
+      "comparison",
+      "comparisonNudge",
+      "comparisonTool",
+    ]);
   });
 });
 

@@ -4,6 +4,7 @@ import type { Db } from "../db";
 import { analysisVersions, conversations, experiments, runs, turns, type RunStatus } from "../db/schema";
 
 import { PROMPT_VERSIONS } from "../analysis/prompts";
+import { variableLabel } from "../experiments/variables";
 import { snapshotFields } from "../analysis/service";
 
 export interface CreatedRun {
@@ -71,6 +72,10 @@ export interface ExperimentListRow {
   number: number;
   name: string;
   declaredVariables: string[];
+  /** The declared variable as shown ("Both models", "Turns", ...), or "" for a standalone run. */
+  variable: string;
+  /** An experiment can be expanded unless it is a standalone run (one run, no declared variable). */
+  expandable: boolean;
   runCount: number;
   /** Status of the single run, or a summary across runs. */
   status: RunStatus | "mixed";
@@ -102,6 +107,8 @@ export async function listExperiments(db: Db): Promise<ExperimentListRow[]> {
       number: e.number,
       name: e.name,
       declaredVariables: e.declaredVariables,
+      variable: variableLabel(e.declaredVariables, e.sharedSettings?.agentB.sameAsA ?? false),
+      expandable: rs.length > 1 || e.declaredVariables.length > 0,
       runCount: rs.length,
       status: statuses.size === 1 ? rs[0].status : rs.length === 0 ? "draft" : "mixed",
       totalCostUsd: rs.reduce((s, r) => s + r.costUsd, 0),

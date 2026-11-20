@@ -29,7 +29,7 @@ export interface JudgeRequest {
   /** When set, the reply's text is JSON following this schema. */
   outputSchema?: Record<string, unknown>;
   tools?: readonly JudgeTool[];
-  purpose: "summarizer" | "report";
+  purpose: "summarizer" | "report" | "comparison";
 }
 
 export type JudgeResponse = ModelResponse;
@@ -197,9 +197,61 @@ function mockReport(req: JudgeRequest): JudgeResponse {
   return { content: [thinking, { type: "text", text: report }], stopReason: "end_turn", usage: MOCK_USAGE };
 }
 
+/**
+ * The mock comparison writer opens the required transcripts from each run
+ * (by letter), then writes a short report that names every run as "Run X"
+ * and quotes the transcripts it opened, so unmasking and the citation check
+ * are exercised.
+ */
+function mockComparison(req: JudgeRequest): JudgeResponse {
+  const first = textOf(req.messages[0]);
+  const ids = [...new Set([...first.matchAll(/<coding id="([A-Z])·C(\d+)"/g)].map((m) => `${m[1]}·${Number(m[2])}`))];
+  const perRun = Number(/open at least (\d+) transcripts from each run/.exec(first)?.[1] ?? 2);
+  const letters = [...new Set(ids.map((id) => id.split("·")[0]))];
+  const results = req.messages.flatMap((m) => m.content.filter((b) => b.type === "tool_result"));
+  const resultText = (b: ContentBlock) => (typeof b.content === "string" ? b.content : JSON.stringify(b.content));
+  const opened = new Set(results.map((b) => /Transcript ([A-Z])·C(\d+)/.exec(resultText(b))).filter(Boolean).map((m) => `${m![1]}·${Number(m![2])}`));
+  const thinking: ContentBlock = { type: "thinking", thinking: "Mock comparison writer plans.", signature: "mock-comparison" };
+
+  for (const l of letters) {
+    const wanted = ids.filter((id) => id.startsWith(`${l}·`)).slice(0, perRun);
+    const next = wanted.find((id) => !opened.has(id));
+    if (next) {
+      const [run, conversation] = next.split("·");
+      return {
+        content: [thinking, { type: "tool_use", id: `mock_cmp_${results.length + 1}`, name: "open_transcript", input: { run, conversation: Number(conversation) } }],
+        stopReason: "tool_use",
+        usage: MOCK_USAGE,
+      };
+    }
+  }
+
+  const examples = results.flatMap((b) => {
+    const text = resultText(b);
+    const id = /Transcript ([A-Z])·C(\d+)/.exec(text);
+    const line = /^\[T(\d+)\] [AB]: (.+)$/m.exec(text);
+    if (!id || !line) return [];
+    const cite = `${id[1]}·C${id[2]}`;
+    const words = line[2].replace(/["“”*]/g, "").split(/\s+/).slice(0, 6).join(" ");
+    return [`- In Run ${id[1]}, ${cite} opened with "${words}" (${cite}·T${line[1]}).`];
+  });
+  const report = [
+    "## Overview",
+    `This mock comparison covers ${letters.map((l) => `Run ${l}`).join(" and ")}. The codings were made by an AI model acting as judge and may contain errors (here, the Mock judge), and model names are masked.`,
+    "## Differences",
+    "- None reported: the Mock model's runs differ by no more than the spread within each run.",
+    "## No clear difference",
+    ...(examples.length ? examples : ["- No transcripts were available."]),
+    "## Caveats",
+    "This comparison was written by the Mock model and says nothing about real model behavior.",
+  ].join("\n\n");
+  return { content: [thinking, { type: "text", text: report }], stopReason: "end_turn", usage: MOCK_USAGE };
+}
+
 export const mockJudge: JudgeClient = {
   async call(req) {
-    return req.purpose === "summarizer" ? mockSummarizer(req) : mockReport(req);
+    if (req.purpose === "summarizer") return mockSummarizer(req);
+    return req.purpose === "comparison" ? mockComparison(req) : mockReport(req);
   },
 };
 

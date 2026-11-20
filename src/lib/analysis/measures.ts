@@ -18,7 +18,7 @@ export function emojiAndSymbolCount(text: string): number {
  * words (Opus, Sonnet, Haiku, Fable, Gemini, Llama, Meta) only count next to a
  * maker's name or a version number, so a poem called a sonnet does not match.
  */
-const NAME_PATTERNS: Array<{ name: string; re: RegExp }> = [
+export const NAME_PATTERNS: Array<{ name: string; re: RegExp }> = [
   { name: "Claude", re: /\bclaude\b/i },
   { name: "Anthropic", re: /\banthropic\b/i },
   { name: "Opus", re: /\b(?:claude[ -]+)opus\b|\bopus[ -]?\d/i },

@@ -280,3 +280,57 @@ export const reports = pgTable(
   },
   (t) => [uniqueIndex("reports_version_run_uq").on(t.analysisVersionId, t.runId)],
 );
+
+/** How a compared run was shown to the comparison writer. */
+export interface ComparisonLabel {
+  runId: string;
+  runNumber: number;
+  /** "X" for Run X. Assigned at random. */
+  label: string;
+  /** Transcripts the writer must open from this run: 2, or all of its coded conversations if fewer. */
+  required: number;
+}
+
+/**
+ * A comparison report (PR 4): two or more runs of one experiment, compared
+ * under one analysis version. The writer sees the runs only by their random
+ * labels, with model names masked; the page unmasks them once it is done.
+ */
+export const comparisons = pgTable(
+  "comparisons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    experimentId: uuid("experiment_id")
+      .notNull()
+      .references(() => experiments.id, { onDelete: "cascade" }),
+    /** Shown as "Comparison 2", numbered within the experiment. */
+    number: integer("number").notNull(),
+    analysisVersionId: uuid("analysis_version_id")
+      .notNull()
+      .references(() => analysisVersions.id, { onDelete: "cascade" }),
+    /** The compared runs in run order, with the label the writer saw for each. */
+    labels: jsonb("labels").$type<ComparisonLabel[]>().notNull(),
+    status: text("status").$type<AnalysisStatus>().notNull().default("pending"),
+    model: text("model").notNull(),
+    /** The writer's conversation so far (masked), replayed unchanged on each call. */
+    messages: jsonb("messages").$type<AgentMessage[]>().notNull().default(sql`'[]'::jsonb`),
+    /** How many transcripts it must open from each run (fewer if a run has fewer coded conversations). */
+    minPerRun: integer("min_per_run").notNull().default(0),
+    /** Transcripts it opened, by real run number. */
+    opened: jsonb("opened").$type<OpenedTranscript[]>().notNull().default(sql`'[]'::jsonb`),
+    nudges: integer("nudges").notNull().default(0),
+    calls: integer("calls").notNull().default(0),
+    /** The report exactly as written, with Run X labels and masked names. */
+    maskedContent: text("masked_content"),
+    /** The same report with the run labels replaced by run IDs. */
+    content: text("content"),
+    warning: text("warning"),
+    citationCheck: jsonb("citation_check").$type<CitationCheckResult>(),
+    error: text("error"),
+    ...tokenColumns(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("comparisons_experiment_number_uq").on(t.experimentId, t.number)],
+);

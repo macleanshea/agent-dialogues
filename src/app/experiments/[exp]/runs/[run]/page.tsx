@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { FieldAggregates } from "@/components/analysis/aggregates";
 import { TurnLineChart } from "@/components/analysis/charts";
@@ -23,6 +24,11 @@ import { modelLabel } from "@/lib/models";
 import { getRunPage } from "@/lib/runs/service";
 import { formatDateTime, formatNumber, formatUsd } from "@/lib/utils";
 import { stopRunAction } from "./actions";
+import { ExperimentToggle } from "@/components/experiments/toggle";
+import { Button } from "@/components/ui/button";
+import { VARIABLES, normalizeVariables, variableLabel, variableValue } from "@/lib/experiments/variables";
+import { addRunHref, experimentHref, sharedSettingsHref } from "@/lib/ids";
+import { declareVariablesAction, deleteDraftFromRunPageAction, startDraftFromRunPageAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -67,12 +73,21 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
   // Keep refreshing until every conversation has ended (including after Stop) and the analysis is finished.
   const live = runActive || conversations.some((c) => c.status === "running") || Boolean(analysis.status?.active);
   const stop = stopRunAction.bind(null, experiment.number, r.number);
+  const variables = normalizeVariables(experiment.declaredVariables);
+  const sameAsA = (experiment.sharedSettings ?? r.config).agentB.sameAsA;
+  const variable = variableLabel(variables, sameAsA);
+  const isDraft = r.status === "draft";
+  const diff = Object.entries(r.configDiff);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Breadcrumbs
-          items={[{ label: "Experiments", href: "/" }, { label: experimentId(experiment.number) }, { label: runId(r.number) }]}
+          items={[
+            { label: "Experiments", href: "/" },
+            { label: experimentId(experiment.number), href: experimentHref(experiment.number) },
+            { label: runId(r.number) },
+          ]}
         />
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{experiment.name}</h1>
@@ -96,6 +111,73 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
           </p>
         )}
       </div>
+
+      {isDraft && (
+        <Card data-testid="draft-banner">
+          <CardBody className="flex flex-wrap items-center gap-3 text-sm">
+            <p>This run is a draft. Nothing has run yet.</p>
+            <form className="ml-auto flex gap-2">
+              <Button type="submit" formAction={startDraftFromRunPageAction.bind(null, experiment.number, r.number)}>
+                Run
+              </Button>
+              <Button type="submit" variant="secondary" formAction={deleteDraftFromRunPageAction.bind(null, experiment.number, r.number)}>
+                Delete draft
+              </Button>
+            </form>
+          </CardBody>
+        </Card>
+      )}
+
+      <Card data-testid="experiment-card">
+        <CardHeader
+          title="Experiment"
+          description={
+            variables.length
+              ? `${experimentId(experiment.number)} varies ${variable}. Every other setting is shared with the baseline (R1).`
+              : "This is a standalone run: an experiment with one run and no declared variable."
+          }
+          actions={
+            variables.length ? (
+              <div className="flex flex-wrap gap-2">
+                <ButtonLink variant="secondary" href={sharedSettingsHref(experiment.number)}>
+                  Shared settings
+                </ButtonLink>
+                <ButtonLink href={addRunHref(experiment.number)}>+ Add run</ButtonLink>
+              </div>
+            ) : undefined
+          }
+        />
+        <CardBody className="flex flex-col gap-3 text-sm">
+          {variables.length > 0 && (
+            <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]" data-testid="variable-values">
+              {variables.map((k) => (
+                <Fragment key={k}>
+                  <dt className="text-muted-foreground">{VARIABLES.find((x) => x.key === k)!.label} in this run</dt>
+                  <dd className="whitespace-pre-wrap">{variableValue(k, r.config, { short: false })}</dd>
+                </Fragment>
+              ))}
+              {r.number > 1 && (
+                <>
+                  <dt className="text-muted-foreground">Differs from R1</dt>
+                  <dd className="font-mono text-xs">{diff.length ? diff.map(([k]) => k).join(", ") : "nothing (a repeat of the baseline)"}</dd>
+                </>
+              )}
+            </dl>
+          )}
+          {experiment.locked ? (
+            <p className="text-muted-foreground" data-testid="locked-note">
+              Locked: this experiment has more than one run, so its shared settings and declared variable can no longer change. To change them,
+              clone the experiment (cloning arrives in a later update). Re-analysis is the one exception: it applies to all runs at once.
+            </p>
+          ) : (
+            <ExperimentToggle
+              declared={variables}
+              sameAsA={sameAsA}
+              save={declareVariablesAction.bind(null, experiment.number)}
+            />
+          )}
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-4">
         {[
@@ -176,7 +258,9 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
         </CardBody>
       </Card>
 
-      <RunReport report={analysis.report} exp={experiment.number} />
+      <div id="run-report">
+        <RunReport report={analysis.report} exp={experiment.number} />
+      </div>
 
       <Card>
         <CardHeader

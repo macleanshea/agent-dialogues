@@ -245,6 +245,123 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
   await expect(page.getByTestId("analysis-panel")).toContainText("Watch how the agents greet each other.");
 });
 
+test("experiments: declare a variable, add and run a draft, lock, expand, and compare", async ({ page }) => {
+  // A small baseline run whose A prompt is shared with B.
+  await page.goto("/runs/new");
+  await page.getByLabel("Name", { exact: true }).fill("Prompt experiment");
+  await page.locator("#a-system").fill("You are curious.");
+  await page.getByLabel("Same as A").check();
+  await page.getByLabel("Turns").fill("4");
+  await page.getByLabel("Number of conversations").fill("3");
+  await page.getByLabel("Analysis focus").fill("Who asks more questions?");
+  await useMockJudges(page);
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.getByRole("heading", { name: "Prompt experiment" })).toBeVisible();
+  const expUrl = page.url().replace(/\/runs\/1$/, "");
+  const expN = Number(/experiments\/(\d+)/.exec(expUrl)![1]);
+
+  // The toggle: unrelated settings show a warning; system prompt A with "same as A" is labelled "Both prompts".
+  const toggle = page.getByTestId("experiment-toggle");
+  await toggle.getByLabel("Turn this run into an experiment").check();
+  await toggle.getByLabel("Both models").check();
+  await expect(toggle.getByLabel("Model A")).toBeChecked();
+  await expect(toggle.getByTestId("variable-preview")).toHaveText("Both models");
+  await expect(toggle.getByTestId("unrelated-warning")).toHaveCount(0);
+  await toggle.getByLabel("Turns", { exact: true }).check();
+  await expect(toggle.getByTestId("unrelated-warning")).toBeVisible();
+  await toggle.getByLabel("Both models").uncheck();
+  await toggle.getByLabel("Turns", { exact: true }).uncheck();
+  await toggle.getByLabel("System prompt A").check();
+  await expect(toggle.getByTestId("variable-preview")).toHaveText("Both prompts");
+  await toggle.getByRole("button", { name: "Save" }).click();
+  await expect(toggle.getByText("Saved.")).toBeVisible();
+  await expect(page.getByTestId("experiment-card")).toContainText("varies Both prompts");
+
+  // Wait for the baseline to finish and be analyzed.
+  await expect(page.getByTestId("coding-status")).toContainText("3 of 3 conversations coded", { timeout: 45_000 });
+  await expect(page.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
+
+  // + Add run: only the declared variable (and cost ceiling, concurrency) is unlocked.
+  await page.getByTestId("experiment-card").getByRole("link", { name: "+ Add run" }).click();
+  await expect(page.getByRole("heading", { name: "Add a run to Prompt experiment" })).toBeVisible();
+  await expect(page.locator("#a-system")).toBeEnabled();
+  await expect(page.locator("#a-system")).toHaveValue("You are curious.");
+  await expect(page.getByLabel("Turns")).toBeDisabled();
+  await expect(page.getByLabel("Turns")).toHaveValue("4");
+  await expect(page.locator("#a-model")).toBeDisabled();
+  await expect(page.getByLabel("Opening message to A")).toBeDisabled();
+  await expect(page.getByLabel("Cost ceiling per run (USD)")).toBeEnabled();
+  await expect(page.getByTestId("analysis-summary")).toContainText("Who asks more questions?");
+  await page.locator("#a-system").fill("You are terse.");
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  // Back on the list, expanded (the state is in the URL), with R2 as a draft.
+  await expect(page).toHaveURL(new RegExp(`\\?open=${expN}`));
+  const panel = page.getByTestId("experiment-panel");
+  await expect(panel.getByTestId("panel-header")).toContainText("Both prompts");
+  await expect(panel.getByTestId("panel-header")).toContainText("Who asks more questions?");
+  const rows = panel.getByTestId("panel-run-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("You are curious.");
+  await expect(rows.nth(1)).toContainText("You are terse.");
+  await expect(rows.nth(1)).toContainText("draft");
+  await expect(rows.nth(0)).toContainText("Report");
+
+  // Locked now: the run page shows the lock instead of the toggle.
+  await rows.nth(0).getByRole("link", { name: "R1" }).click();
+  await expect(page.getByTestId("locked-note")).toBeVisible();
+  await expect(page.getByTestId("experiment-toggle")).toHaveCount(0);
+
+  // Shared settings: the read-only form, with a Clone button (cloning arrives in PR 5).
+  await page.getByTestId("experiment-card").getByRole("link", { name: "Shared settings" }).click();
+  await expect(page.getByRole("heading", { name: /Shared settings/ })).toBeVisible();
+  await expect(page.locator("#a-system")).toBeDisabled();
+  await expect(page.locator("#a-system")).toHaveValue("You are curious.");
+  await expect(page.getByRole("button", { name: "Clone" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Start run" })).toBeHidden();
+
+  // Collapse and expand from the list.
+  await page.goto("/");
+  const expRow = page.getByTestId("experiment-row").filter({ hasText: "Prompt experiment" });
+  await expect(expRow).toContainText("Both prompts");
+  await expect(expRow).toContainText("2");
+  await expRow.getByRole("link", { name: `Expand EXP-${String(expN).padStart(3, "0")}` }).click();
+  await expect(page).toHaveURL(new RegExp(`\\?open=${expN}`));
+  await expect(page.getByTestId("experiment-panel")).toBeVisible();
+
+  // Run the draft with its Run button; the list refreshes until it is done and reported.
+  const r2 = page.getByTestId("panel-run-row").nth(1);
+  await r2.getByRole("button", { name: "Run", exact: true }).click();
+  await expect(r2).toContainText("done", { timeout: 45_000 });
+  await expect(r2.getByRole("link", { name: "Report" })).toBeVisible({ timeout: 45_000 });
+
+  // Compare: one run is not enough; two open the comparison page.
+  await page.getByLabel("Compare R1").check();
+  await page.getByRole("button", { name: "Compare ticked runs" }).click();
+  await expect(page.getByText("Tick two or more runs to compare.")).toBeVisible();
+  await page.getByLabel("Compare R1").check();
+  await page.getByLabel("Compare R2").check();
+  await page.getByRole("button", { name: "Compare ticked runs" }).click();
+  await expect(page).toHaveURL(/comparisons\/1$/);
+  await expect(page.getByRole("heading", { name: "Comparison 1: R1 vs R2" })).toBeVisible();
+  const report = page.getByTestId("comparison-report");
+  await expect(report.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
+  // Unmasked once written: each letter maps to a run, and citations use run IDs.
+  const mapping = page.getByTestId("comparison-run-row");
+  await expect(mapping).toHaveCount(2);
+  await expect(mapping.filter({ hasText: "Run X" })).toContainText(/R[12]/);
+  await expect(mapping.filter({ hasText: "You are terse." })).toContainText("R2");
+  await expect(report.getByTestId("comparison-footer")).toContainText("(4)");
+  await expect(report.getByRole("link", { name: /^R[12]·C\d\d·T\d+$/ }).first()).toBeVisible();
+  await expect(report.getByTestId("masked-report")).toContainText("Run X", { useInnerText: false });
+
+  // The comparison is listed in the experiment's panel, and the prompt is on the Prompts page.
+  await page.getByRole("link", { name: `EXP-${String(expN).padStart(3, "0")}` }).click();
+  await expect(page.getByTestId("panel-comparisons")).toContainText("Comparison 1");
+  await page.goto("/prompts");
+  await expect(page.getByTestId("prompt").filter({ hasText: "Comparison report (v1)" })).toContainText("Report a difference only when");
+});
+
 test("unknown pages show not found", async ({ page }) => {
   const res = await page.goto("/experiments/999/runs/1");
   expect(res?.status()).toBe(404);

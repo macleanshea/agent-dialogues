@@ -136,10 +136,9 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
   await expect(picker.getByTestId("field-count")).toHaveText("2 selected");
   await expect(picker.getByRole("checkbox", { name: "topics" })).toBeChecked();
   await expect(picker.getByRole("checkbox", { name: "themes_by_turn" })).toBeChecked();
-  await picker.getByRole("button", { name: "Scenario" }).click();
-  await expect(picker.getByTestId("field-count")).toHaveText("20 selected");
-  await picker.getByRole("button", { name: "Open-ended" }).click();
-  await expect(picker.getByTestId("field-count")).toHaveText("12 selected");
+  // The Open-ended and Scenario preset buttons were removed at the user's request.
+  await expect(picker.getByRole("button", { name: "Scenario" })).toHaveCount(0);
+  await expect(picker.getByRole("button", { name: "Open-ended" })).toHaveCount(0);
   await picker.getByRole("button", { name: "Deselect all" }).click();
   await expect(picker.getByTestId("field-count")).toHaveText("0 selected");
   await picker.getByRole("button", { name: "Select all", exact: true }).click();
@@ -230,13 +229,14 @@ test("analysis: field picker with a custom field, codings, aggregates, report, a
   await page.getByRole("link", { name: "Re-analyze" }).click();
   await expect(page.getByRole("heading", { name: /Re-analyze/ })).toBeVisible();
   await expect(page.getByLabel("Analysis focus")).toHaveValue("Watch how the agents greet each other.");
-  await page.getByTestId("field-picker").getByRole("button", { name: "Scenario" }).click();
+  await page.getByTestId("field-picker").getByRole("button", { name: "Select all", exact: true }).click();
   await page.getByLabel("Analysis focus").fill("Look for disagreement.");
   await page.getByRole("button", { name: "Re-analyze all runs" }).click();
   await expect(page).toHaveURL(/\?v=2$/);
   await expect(page.getByTestId("coding-status")).toContainText("4 of 4 conversations coded", { timeout: 45_000 });
   await expect(page.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
-  await expect(page.getByTestId("field-aggregate")).toHaveCount(20);
+  // Select all ticks the 20 built-in fields and the custom one.
+  await expect(page.getByTestId("field-aggregate")).toHaveCount(21);
   await expect(page.getByTestId("agg-evaluation_awareness-A")).toContainText("of 4");
   await expect(page.getByTestId("analysis-panel")).toContainText("Look for disagreement.");
   await page.getByTestId("version-picker").getByRole("link", { name: "v1" }).click();

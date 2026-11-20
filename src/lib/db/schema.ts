@@ -24,6 +24,7 @@ import type {
 import type { FieldGroup, FieldOptions, FieldScope, FieldType, PresetKey } from "../fields/library";
 import type { CodingOutput } from "../analysis/fields";
 import type { CitationCheckResult } from "../analysis/citations";
+import type { PresetKind } from "../presets/kinds";
 
 export type RunStatus = "draft" | "queued" | "running" | "done" | "failed" | "stopped";
 
@@ -70,6 +71,11 @@ export const runs = pgTable(
     stopRequested: boolean("stop_requested").notNull().default(false),
     /** The Vercel Workflow run executing this run. */
     workflowRunId: text("workflow_run_id"),
+    /**
+     * Agent spend on conversation attempts that were discarded by "Retry
+     * failed conversations" (PR 5). Still part of the run's cost.
+     */
+    retriedCostUsd: doublePrecision("retried_cost_usd").notNull().default(0),
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -99,6 +105,8 @@ export const conversations = pgTable(
     costUsd: doublePrecision("cost_usd").notNull().default(0),
     /** First turn where repetition met the stop condition (two consecutive checks at or above the threshold). */
     repetitionFlagTurn: integer("repetition_flag_turn"),
+    /** How many times this conversation was retried from scratch after it errored (PR 5). */
+    retries: integer("retries").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     updatedAt: updatedAt(),
@@ -333,4 +341,26 @@ export const comparisons = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("comparisons_experiment_number_uq").on(t.experimentId, t.number)],
+);
+
+
+/**
+ * Saved prompt presets (PR 5): text that can be loaded into a system prompt
+ * or the opening message on the run form. Built-in presets are seeded and
+ * cannot be deleted; saved ones can.
+ */
+export const promptPresets = pgTable(
+  "prompt_presets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Fixed for built-in presets, so seeding can update them in place. Null for saved ones. */
+    seedKey: text("seed_key").unique(),
+    kind: text("kind").$type<PresetKind>().notNull(),
+    name: text("name").notNull(),
+    text: text("text").notNull(),
+    builtin: boolean("builtin").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("prompt_presets_kind_name_uq").on(t.kind, t.name)],
 );

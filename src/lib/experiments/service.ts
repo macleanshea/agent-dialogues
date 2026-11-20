@@ -249,3 +249,30 @@ export function formValuesFrom(snapshot: RunConfigSnapshot): RunConfig {
   const { resolved, ...config } = snapshot;
   return config;
 }
+
+/**
+ * Clone with "also copy the other runs" (PR 5): gives a new experiment (whose
+ * R1 was just created from the clone form) the source experiment's declared
+ * variable, and adds each of the source's other runs as a draft. Each draft
+ * takes its value of the variable from the source run and everything else
+ * from the new baseline, exactly as "+ Add run" would.
+ */
+export async function copyRunsFromExperiment(db: Db, targetExperimentId: string, sourceExperimentId: string): Promise<Result<{ copied: number }>> {
+  const [source] = await db.select().from(experiments).where(eq(experiments.id, sourceExperimentId));
+  if (!source) return { ok: false, message: "The experiment being cloned no longer exists." };
+  if (source.declaredVariables.length === 0) return { ok: true, copied: 0 };
+  const declared = await declareVariables(db, targetExperimentId, source.declaredVariables);
+  if (!declared.ok) return declared;
+  const others = await db
+    .select()
+    .from(runs)
+    .where(and(eq(runs.experimentId, sourceExperimentId), sql`${runs.number} > 1`))
+    .orderBy(asc(runs.number));
+  let copied = 0;
+  for (const r of others) {
+    const res = await addDraftRun(db, targetExperimentId, formValuesFrom(r.config));
+    if (!res.ok) return res;
+    copied++;
+  }
+  return { ok: true, copied };
+}

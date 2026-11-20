@@ -18,6 +18,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               Agent Dialogues
             </Link>
             <nav className="flex items-center gap-4">
+              <Link href="/presets" className="text-sm text-muted-foreground hover:text-foreground">
+                Presets
+              </Link>
               <Link href="/prompts" className="text-sm text-muted-foreground hover:text-foreground">
                 Prompts
               </Link>

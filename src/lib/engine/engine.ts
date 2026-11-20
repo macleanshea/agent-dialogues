@@ -102,6 +102,8 @@ export interface TakeTurnInput {
   client: ModelClient;
   /** The conversation's number in its run. Passed to the model as metadata only. */
   conversationIndex?: number;
+  /** How many times the conversation was retried from scratch. Metadata only, for the Mock model. */
+  attempt?: number;
   /** All stored turns, 1..k in order. */
   turns: TurnRecord[];
   /** Set when this call retries a truncated, empty turn. */
@@ -185,7 +187,7 @@ export async function takeTurn(input: TakeTurnInput): Promise<TurnStep> {
       messages,
       maxTokens: maxTokensUsed,
       effort: agent.effort,
-      meta: { speaker, turnNumber: t, conversationIndex: input.conversationIndex },
+      meta: { speaker, turnNumber: t, conversationIndex: input.conversationIndex, attempt: input.attempt },
     });
   } catch (err) {
     if (isTransientModelError(err)) throw err;

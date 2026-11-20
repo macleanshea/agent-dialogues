@@ -37,7 +37,7 @@ export interface ModelRequest {
   maxTokens: number;
   effort: Effort;
   /** For the mock and for logging; never sent to the API. */
-  meta: { speaker: Speaker; turnNumber: number; conversationIndex?: number };
+  meta: { speaker: Speaker; turnNumber: number; conversationIndex?: number; attempt?: number };
 }
 
 export interface ModelResponse {

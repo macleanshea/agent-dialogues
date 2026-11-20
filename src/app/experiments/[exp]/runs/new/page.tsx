@@ -10,6 +10,8 @@ import { getDb } from "@/lib/db";
 import { formValuesFrom, getBaseline, getExperimentByNumber, latestVersion } from "@/lib/experiments/service";
 import { variableLabel } from "@/lib/experiments/variables";
 import { toPickerField } from "@/lib/fields/picker";
+import { listPresets, toPresetOption } from "@/lib/presets/service";
+import { baselineProfile } from "@/lib/runs/service";
 import { experimentHref, experimentId, parseIndex, runHref } from "@/lib/ids";
 import { addRunAction } from "../../actions";
 
@@ -27,6 +29,8 @@ export default async function AddRunPage({ params }: PageProps<"/experiments/[ex
   if (!baseline) notFound();
   const version = await latestVersion(db, experiment.id);
   const fields = (await listFieldLibrary(db)).map(toPickerField);
+  const presets = (await listPresets(db)).map(toPresetOption);
+  const profile = await baselineProfile(db, experiment.id);
   const variable = variableLabel(experiment.declaredVariables, baseline.config.agentB.sameAsA);
 
   return (
@@ -66,6 +70,8 @@ export default async function AddRunPage({ params }: PageProps<"/experiments/[ex
             variables={experiment.declaredVariables}
             action={addRunAction.bind(null, experiment.number)}
             analysisSummary={<AnalysisSummary version={version} />}
+            presets={presets}
+            baseline={profile}
           />
         </>
       )}

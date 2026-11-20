@@ -394,6 +394,132 @@ test("experiments: declare a variable, add and run a draft, lock, expand, compar
   await expect(page.getByTestId("prompt").filter({ hasText: "Comparison report (v2)" })).toContainText("at most 1,000 words");
 });
 
+test("finishing: cost estimate, presets, retry, export, and clone with runs", async ({ page }) => {
+  await page.goto("/runs/new");
+
+  // The estimate updates as settings change: free with the Mock model, a range with a real one.
+  const estimate = page.getByTestId("cost-estimate");
+  await expect(estimate.getByTestId("estimate-run")).toHaveText("$0.00 (Mock model)");
+  await page.locator("#a-model").selectOption("claude-opus-5-5");
+  await page.locator("#b-model").selectOption("claude-opus-5-5");
+  await expect(estimate.getByTestId("estimate-run")).toContainText("–");
+  await page.getByLabel("Cost ceiling per run (USD)").fill("0.5");
+  await expect(estimate.getByTestId("estimate-warning")).toContainText("ceiling");
+  await page.getByLabel("Turns").fill("");
+  await expect(estimate).toContainText("to see an estimate");
+  await page.locator("#a-model").selectOption("mock");
+  await page.locator("#b-model").selectOption("mock");
+  await page.getByLabel("Cost ceiling per run (USD)").fill("5");
+
+  // The three seeded presets load into the boxes.
+  await page.getByLabel("System prompt A preset").selectOption({ label: "Another AI, no human" });
+  await expect(page.locator("#a-system")).toHaveValue("You are in a conversation with another AI model. No human is taking part.");
+  await page.getByLabel("System prompt A preset").selectOption({ label: "Blank (no system prompt)" });
+  await expect(page.locator("#a-system")).toHaveValue("");
+  await page.getByLabel("Opening message preset").selectOption({ label: "Act freely" });
+  await expect(page.getByLabel("Opening message to A")).toHaveValue("You may act freely in this open-ended context.");
+
+  // Save a preset from the form; it appears in B's list too.
+  await page.locator("#a-system").fill("[mock:flaky]");
+  await page.getByRole("button", { name: "Save System prompt A as preset" }).click();
+  await page.getByLabel("Name for the System prompt A preset").fill("Flaky mock");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByLabel("System prompt B preset").locator("option", { hasText: "Flaky mock" })).toHaveCount(1);
+
+  // A run whose odd-numbered conversations fail on their first attempt.
+  await page.getByLabel("Name", { exact: true }).fill("Retry test");
+  await page.getByLabel("Turns").fill("4");
+  await page.getByLabel("Number of conversations").fill("3");
+  await useMockJudges(page);
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.getByRole("heading", { name: "Retry test" })).toBeVisible();
+  const runUrl = page.url();
+  const expN = Number(/experiments\/(\d+)/.exec(runUrl)![1]);
+  const banner = page.getByTestId("retry-banner");
+  await expect(banner).toContainText("2 conversations failed", { timeout: 30_000 });
+  await expect(page.getByTestId("coding-status")).toContainText("1 of 1 conversations coded", { timeout: 45_000 });
+  await expect(page.getByTestId("live")).toHaveCount(0, { timeout: 30_000 });
+
+  // Retry: the two failed conversations start again and finish; the run is analyzed again.
+  await banner.getByRole("button", { name: "Retry failed conversations" }).click();
+  const rows = page.getByTestId("conversation-row");
+  await expect(rows.nth(0)).toContainText("Turn cap reached", { timeout: 30_000 });
+  await expect(rows.nth(2)).toContainText("Turn cap reached", { timeout: 30_000 });
+  await expect(rows.nth(0)).toContainText("(retried)");
+  await expect(rows.nth(1)).not.toContainText("(retried)");
+  await expect(page.getByTestId("retry-banner")).toHaveCount(0);
+  await expect(page.getByTestId("run-subtitle")).toContainText("2 conversations retried");
+  await expect(page.getByTestId("coding-status")).toContainText("3 of 3 conversations coded", { timeout: 45_000 });
+  await expect(page.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
+
+  // Export: JSON and Markdown downloads of the run.
+  const exportLinks = page.getByTestId("export-links");
+  const download = page.waitForEvent("download");
+  await exportLinks.getByRole("link", { name: "Export JSON" }).click();
+  expect((await download).suggestedFilename()).toBe(`EXP-${String(expN).padStart(3, "0")}-R1.json`);
+  const json = await page.request.get(`${runUrl}/export?format=json`);
+  expect(json.headers()["content-type"]).toContain("application/json");
+  const doc = await json.json();
+  expect(doc.runs[0].conversations).toHaveLength(3);
+  expect(doc.runs[0].conversations[0].retries).toBe(1);
+  expect(doc.runs[0].conversations[0].turns[0].content[0].type).toBe("thinking");
+  const md = await (await page.request.get(`${runUrl}/export?format=md`)).text();
+  expect(md).toContain("# EXP-");
+  expect(md).toContain("R1·C03·T4");
+  expect((await page.request.get(`/experiments/${expN}/runs/9/export?format=json`)).status()).toBe(404);
+
+  // The Presets page lists the saved preset (deletable) and the built-in ones (not).
+  await page.getByRole("link", { name: "Presets" }).click();
+  await expect(page.getByRole("heading", { name: "Presets" })).toBeVisible();
+  const presetRows = page.getByTestId("preset-row");
+  await expect(presetRows).toHaveCount(4);
+  await expect(presetRows.filter({ hasText: "Act freely" }).getByRole("button", { name: /Delete/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Delete preset Flaky mock" }).click();
+  await expect(presetRows).toHaveCount(3);
+  await page.getByLabel("Name", { exact: true }).fill("Greeting");
+  await page.getByLabel("For", { exact: true }).selectOption("opening_message");
+  await page.getByLabel("Text", { exact: true }).fill("Hello, who are you?");
+  await page.getByRole("button", { name: "Save preset" }).click();
+  await expect(presetRows).toHaveCount(4);
+
+  // Make it an experiment over Turns and add a draft: its estimate uses R1's actual averages.
+  await page.goto(runUrl);
+  await page.getByRole("button", { name: "Experiment", exact: true }).click();
+  const dialog = page.getByTestId("experiment-dialog");
+  await dialog.getByLabel("Make this an experiment").check();
+  await dialog.getByLabel("Turns", { exact: true }).check();
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog.getByText("Saved.")).toBeVisible();
+  await page.goto(`/experiments/${expN}/runs/new`);
+  await expect(page.getByTestId("cost-estimate")).toContainText("from R1's actual averages");
+  await page.getByLabel("Turns").fill("6");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page).toHaveURL(new RegExp(`\\?open=${expN}`));
+  await expect(page.getByTestId("experiment-panel").getByTestId("export-links")).toBeVisible();
+
+  // Clone the whole experiment with a changed shared setting: R1 starts, R2 is copied as a draft.
+  await page.getByTestId("experiment-row").filter({ hasText: "Retry test" }).getByRole("link", { name: "Clone" }).click();
+  await expect(page.getByLabel("Also copy the variable (Turns) and the other 1 run as drafts")).toBeChecked();
+  await page.locator("#a-system").fill("");
+  await page.getByLabel("Number of conversations").fill("2");
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page).toHaveURL(/\?open=\d+/);
+  const cloned = page.getByTestId("experiment-row").filter({ hasText: "Retry test (copy)" });
+  await expect(cloned).toContainText("Turns");
+  const panelRows = page.getByTestId("experiment-panel").getByTestId("panel-run-row");
+  await expect(panelRows).toHaveCount(2);
+  await expect(panelRows.nth(1)).toContainText("6");
+  await expect(panelRows.nth(1)).toContainText("draft");
+
+  // A run page's Clone copies that run's settings only.
+  await page.goto(`/experiments/${expN}/runs/2`);
+  await expect(page.getByTestId("cost-estimate")).toContainText("from R1's actual averages");
+  await page.getByRole("link", { name: "Clone" }).click();
+  await expect(page.getByTestId("clone-source")).toContainText("/ R2");
+  await expect(page.getByLabel("Turns")).toHaveValue("6");
+  await expect(page.getByTestId("clone-runs")).toHaveCount(0);
+});
+
 test("unknown pages show not found", async ({ page }) => {
   const res = await page.goto("/experiments/999/runs/1");
   expect(res?.status()).toBe(404);

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import type { ActionState } from "@/app/experiments/[exp]/actions";
+import { ExportLinks } from "@/components/export-links";
 import { StatusBadge } from "@/components/status";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
@@ -58,6 +59,7 @@ export function ExperimentPanel({
           {locked && <span className="ml-2 text-xs text-muted-foreground">(locked)</span>}
         </p>
         <div className="ml-auto flex flex-wrap gap-2">
+          <ExportLinks exp={exp} />
           <ButtonLink variant="secondary" href={addRunHref(exp)}>
             + Add run
           </ButtonLink>

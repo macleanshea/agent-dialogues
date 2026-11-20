@@ -5,7 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea, Toggle } from "@/components/ui/form";
 import { LIMITS, OPENING_STUB, SIGN_OFF_LINE, type RunConfig } from "@/lib/config";
+import { CostEstimate } from "@/components/cost-estimate";
 import { FieldPicker } from "@/components/field-picker";
+import { PresetPicker } from "@/components/preset-picker";
+import type { BaselineProfile } from "@/lib/estimate";
+import type { PresetOption } from "@/lib/presets/kinds";
 import { ModelOptions } from "@/components/model-options";
 import type { PickerField } from "@/lib/fields/picker";
 import { EFFORTS, EFFORT_LABELS } from "@/lib/models";
@@ -32,6 +36,9 @@ export function RunForm({
   variables = [],
   action = createRunAction,
   analysisSummary,
+  presets = [],
+  baseline = null,
+  cloneFrom = null,
 }: {
   initial: RunConfig;
   fields: PickerField[];
@@ -40,7 +47,16 @@ export function RunForm({
   action?: (prev: RunFormState, formData: FormData) => Promise<RunFormState>;
   /** Shown instead of the analysis settings in "add" mode. */
   analysisSummary?: ReactNode;
+  /** Saved prompt presets, for the lists under the prompts. */
+  presets?: PresetOption[];
+  /** The experiment's finished baseline, so the cost estimate can use its actual averages. */
+  baseline?: BaselineProfile | null;
+  /** When cloning a whole experiment: its number, and how its other runs are offered for copying. */
+  cloneFrom?: { exp: number; otherRuns: number; variable: string } | null;
 }) {
+  const [presetList, setPresetList] = useState<PresetOption[]>(presets);
+  const addPreset = (p: PresetOption) => setPresetList((prev) => [...prev, p]);
+  const [copyRuns, setCopyRuns] = useState(Boolean(cloneFrom && cloneFrom.otherRuns > 0));
   const [v, setV] = useState<Values>(initial);
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
   const err = (path: string) => state.errors[path];
@@ -59,6 +75,8 @@ export function RunForm({
   return (
     <form action={formAction} className="flex flex-col gap-6" noValidate>
       <input type="hidden" name="config" value={JSON.stringify(payload)} />
+      {cloneFrom && <input type="hidden" name="cloneFrom" value={cloneFrom.exp} />}
+      {cloneFrom && copyRuns && <input type="hidden" name="copyRuns" value="1" />}
 
       <Card>
         <CardHeader title="Name" info={mode === "new" ? "Optional. Leave blank to name it after the models and turn count." : undefined} />
@@ -113,6 +131,16 @@ export function RunForm({
                 value={v.agentA.systemPrompt}
                 onChange={(e) => setA({ systemPrompt: e.target.value })}
               />
+              <PresetPicker
+                id="a-system"
+                label="System prompt A"
+                kind="system_prompt"
+                presets={presetList}
+                text={v.agentA.systemPrompt}
+                disabled={locked("agentA.systemPrompt")}
+                onLoad={(text) => setA({ systemPrompt: text })}
+                onSaved={addPreset}
+              />
             </Field>
           </fieldset>
 
@@ -152,6 +180,16 @@ export function RunForm({
                 disabled={v.agentB.sameAsA || locked("agentB.systemPrompt")}
                 onChange={(e) => setB({ systemPrompt: e.target.value })}
               />
+              <PresetPicker
+                id="b-system"
+                label="System prompt B"
+                kind="system_prompt"
+                presets={presetList}
+                text={v.agentB.sameAsA ? v.agentA.systemPrompt : v.agentB.systemPrompt}
+                disabled={v.agentB.sameAsA || locked("agentB.systemPrompt")}
+                onLoad={(text) => setB({ systemPrompt: text })}
+                onSaved={addPreset}
+              />
             </Field>
             <Toggle
               id="b-same"
@@ -179,6 +217,16 @@ export function RunForm({
               rows={3}
               value={v.openingMessage}
               onChange={(e) => set("openingMessage", e.target.value)}
+            />
+            <PresetPicker
+              id="opening"
+              label="Opening message"
+              kind="opening_message"
+              presets={presetList}
+              text={v.openingMessage}
+              disabled={locked("openingMessage")}
+              onLoad={(text) => set("openingMessage", text)}
+              onSaved={addPreset}
             />
           </Field>
           <Toggle
@@ -377,6 +425,23 @@ export function RunForm({
           <CardBody>{analysisSummary}</CardBody>
         </Card>
       )}
+
+      {cloneFrom && cloneFrom.otherRuns > 0 && (
+        <Card data-testid="clone-runs">
+          <CardHeader title="Experiment" />
+          <CardBody>
+            <Toggle
+              id="copy-runs"
+              label={`Also copy the variable (${cloneFrom.variable}) and the other ${cloneFrom.otherRuns} run${cloneFrom.otherRuns === 1 ? "" : "s"} as drafts`}
+              hint="The settings above become the new baseline (R1), which starts now. Each other run is saved as a draft with its own value of the variable and everything else from the new baseline, so you can change shared settings and run the whole experiment again."
+              checked={copyRuns}
+              onChange={(e) => setCopyRuns(e.target.checked)}
+            />
+          </CardBody>
+        </Card>
+      )}
+
+      <CostEstimate values={payload} baseline={baseline} />
 
       <div className="flex items-center gap-4">
         <Button type="submit" disabled={pending}>

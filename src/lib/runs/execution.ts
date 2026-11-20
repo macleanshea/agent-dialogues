@@ -1,7 +1,7 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { RunConfigSnapshot } from "../config";
 import type { Db } from "../db";
-import { conversations, experiments, runs, turns, type RunStatus } from "../db/schema";
+import { analysisVersions, codings, conversations, experiments, reports, runs, turns, type RunStatus } from "../db/schema";
 import {
   endForStopReason,
   takeTurn,
@@ -189,6 +189,7 @@ export async function advanceConversation(
     setup: setupFromConfig(config),
     client,
     conversationIndex: conv.index,
+    attempt: conv.retries,
     turns: stored,
     retry,
   });
@@ -261,7 +262,8 @@ export async function finalizeRun(db: Db, runId: string): Promise<RunStatus> {
     .select({ status: conversations.status, cost: conversations.costUsd })
     .from(conversations)
     .where(eq(conversations.runId, runId));
-  const cost = all.reduce((s, c) => s + c.cost, 0);
+  // Spend on attempts discarded by a retry still counts toward the run's cost.
+  const cost = all.reduce((s, c) => s + c.cost, 0) + run.retriedCostUsd;
   const status: RunStatus = run.stopRequested
     ? "stopped"
     : all.length > 0 && all.every((c) => c.status === "errored")
@@ -290,6 +292,89 @@ export async function requestStop(db: Db, runId: string): Promise<void> {
       .update(conversations)
       .set({ status: "stopped", stopReason: "stopped_by_user", finishedAt: sql`now()`, updatedAt: sql`now()` })
       .where(and(eq(conversations.runId, runId), eq(conversations.status, "pending")));
+  });
+}
+
+export type RetryResult = { ok: true; count: number } | { ok: false; message: string };
+
+/** Why "Retry failed conversations" is not available for a run, or null when it is. */
+export function retryBlocker(run: { status: RunStatus; costUsd: number; config: { costCeilingUsd: number } }, erroredCount: number): string | null {
+  if (erroredCount === 0) return "No conversation in this run failed.";
+  if (run.status !== "done" && run.status !== "failed") return "Failed conversations can be retried once the run has finished.";
+  if (run.costUsd >= run.config.costCeilingUsd) {
+    return "The run has reached its cost ceiling, so retried conversations would stop at once. Clone the run with a higher ceiling instead.";
+  }
+  return null;
+}
+
+/**
+ * "Retry failed conversations" (PR 5). Every errored conversation in a
+ * finished run starts again from turn 1: its turns and codings are deleted,
+ * the spend on the discarded attempt moves to the run's retriedCostUsd (so the
+ * run's cost and the ceiling still count it), and the run goes back to
+ * queued. The caller then starts the run's workflow, which runs only these
+ * conversations and analyzes the run again under the latest analysis version.
+ */
+export async function retryFailedConversations(db: Db, runIdValue: string): Promise<RetryResult> {
+  return db.transaction(async (tx) => {
+    const [run] = await tx.select().from(runs).where(eq(runs.id, runIdValue));
+    if (!run) return { ok: false as const, message: "This run no longer exists." };
+    const failed = await tx
+      .select({ id: conversations.id, costUsd: conversations.costUsd })
+      .from(conversations)
+      .where(and(eq(conversations.runId, runIdValue), eq(conversations.status, "errored")));
+    const blocker = retryBlocker(run, failed.length);
+    if (blocker) return { ok: false as const, message: blocker };
+
+    // Claim the run first, so a double click retries only once.
+    const claimed = await tx
+      .update(runs)
+      .set({
+        status: "queued",
+        stopRequested: false,
+        error: null,
+        finishedAt: null,
+        retriedCostUsd: sql`${runs.retriedCostUsd} + ${failed.reduce((s, c) => s + c.costUsd, 0)}`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(runs.id, runIdValue), inArray(runs.status, ["done", "failed"])))
+      .returning({ id: runs.id });
+    if (claimed.length === 0) return { ok: false as const, message: "This run is already being retried." };
+
+    const ids = failed.map((c) => c.id);
+    await tx.delete(turns).where(inArray(turns.conversationId, ids));
+    // Codings of the discarded attempt no longer match a transcript (in any analysis version).
+    await tx.delete(codings).where(inArray(codings.conversationId, ids));
+    await tx
+      .update(conversations)
+      .set({
+        status: "pending",
+        stopReason: null,
+        error: null,
+        turnsCompleted: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        thinkingTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        costUsd: 0,
+        repetitionFlagTurn: null,
+        startedAt: null,
+        finishedAt: null,
+        retries: sql`${conversations.retries} + 1`,
+        updatedAt: sql`now()`,
+      })
+      .where(inArray(conversations.id, ids));
+    // The run report under the latest analysis version is written again once the retried conversations are coded.
+    const [latest] = await tx
+      .select({ id: analysisVersions.id })
+      .from(analysisVersions)
+      .where(eq(analysisVersions.experimentId, run.experimentId))
+      .orderBy(desc(analysisVersions.version))
+      .limit(1);
+    if (latest) await tx.delete(reports).where(and(eq(reports.runId, runIdValue), eq(reports.analysisVersionId, latest.id)));
+    await tx.update(experiments).set({ updatedAt: sql`now()` }).where(eq(experiments.id, run.experimentId));
+    return { ok: true as const, count: ids.length };
   });
 }
 

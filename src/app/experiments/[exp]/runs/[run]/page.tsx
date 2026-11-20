@@ -13,6 +13,7 @@ import { StatusBadge, stopReasonLabel } from "@/components/status";
 import { StopButton } from "@/components/stop-button";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Info } from "@/components/ui/info";
 import { Section } from "@/components/ui/section";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { formatValue, slotsFor, type FieldDef } from "@/lib/analysis/fields";
@@ -21,12 +22,16 @@ import { getRunAnalysis } from "@/lib/analysis/queries";
 import { customFieldNames, listFieldLibrary } from "@/lib/analysis/service";
 import { getDb } from "@/lib/db";
 import { normalizeVariables, variableLabel, variableValues } from "@/lib/experiments/variables";
-import { conversationHref, conversationId, experimentHref, experimentId, parseIndex, runHref, runId } from "@/lib/ids";
+import { cloneHref, conversationHref, conversationId, experimentHref, experimentId, parseIndex, runHref, runId } from "@/lib/ids";
 import { modelLabel } from "@/lib/models";
 import { getRunPage } from "@/lib/runs/service";
 import { formatDateTime, formatNumber, formatUsd } from "@/lib/utils";
 import { declareVariablesAction, deleteDraftFromRunPageAction, startDraftFromRunPageAction } from "../../actions";
-import { stopRunAction } from "./actions";
+import { retryFailedAction, stopRunAction } from "./actions";
+import { CostEstimate } from "@/components/cost-estimate";
+import { ExportLinks } from "@/components/export-links";
+import { retryBlocker } from "@/lib/runs/execution";
+import { baselineProfile } from "@/lib/runs/service";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +79,10 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
   const variables = normalizeVariables(experiment.declaredVariables);
   const sameAsA = (experiment.sharedSettings ?? r.config).agentB.sameAsA;
   const isDraft = r.status === "draft";
+  const blocker = retryBlocker(r, errored);
+  const retried = conversations.filter((c) => c.retries > 0).length;
+  // A draft shows what it is expected to cost: from R1's actual averages once R1 has finished.
+  const draftBaseline = isDraft && r.number > 1 ? await baselineProfile(db, experiment.id) : null;
   const coded = analysis.status && analysis.status.total > 0 ? `${analysis.status.done} of ${analysis.status.total} coded` : null;
 
   return (
@@ -98,6 +107,10 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
               locked={experiment.locked}
               save={declareVariablesAction.bind(null, experiment.number)}
             />
+            <ButtonLink variant="secondary" href={cloneHref(experiment.number, r.number)}>
+              Clone
+            </ButtonLink>
+            {!isDraft && <ExportLinks exp={experiment.number} run={r.number} version={analysis.versions.length > 1 ? v : undefined} />}
             {runActive && <StopButton onStop={stop} />}
           </div>
         </div>
@@ -110,6 +123,8 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
             </>
           )}
           {" · "}Started {formatDateTime(r.startedAt)} · Cost {formatUsd(r.costUsd)}
+          {r.retriedCostUsd > 0 ? ` (${formatUsd(r.retriedCostUsd)} on retried attempts)` : ""}
+          {retried > 0 ? ` · ${retried} conversation${retried === 1 ? "" : "s"} retried` : ""}
           {analysis.status ? ` · Analysis ${formatUsd(analysis.status.costUsd)}` : ""}
         </p>
         {r.error && <p className="text-sm text-destructive">{r.error}</p>}
@@ -128,6 +143,30 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
                 Delete draft
               </Button>
             </span>
+          </form>
+        </Card>
+      )}
+
+      {isDraft && <CostEstimate values={r.config} baseline={draftBaseline} />}
+
+      {errored > 0 && !runActive && (
+        <Card data-testid="retry-banner">
+          <form className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
+            <span>
+              {errored} conversation{errored === 1 ? "" : "s"} failed.
+              {blocker && errored > 0 ? <span className="ml-1 text-muted-foreground">{blocker}</span> : null}
+            </span>
+            {!blocker && (
+              <span className="ml-auto flex items-center gap-2">
+                <Info>
+                  Each failed conversation starts again from turn 1: its turns and codings are discarded, the money already spent on it stays in
+                  the run&apos;s cost, and the run is analyzed again (a new run report under the latest analysis version) when they finish.
+                </Info>
+                <Button type="submit" formAction={retryFailedAction.bind(null, experiment.number, r.number)}>
+                  Retry failed conversations
+                </Button>
+              </span>
+            )}
           </form>
         </Card>
       )}
@@ -187,6 +226,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
                   </Td>
                   <Td className="whitespace-nowrap">
                     {stopReasonLabel(c.stopReason)}
+                    {c.retries > 0 && <span className="ml-1.5 text-xs text-muted-foreground">(retried{c.retries > 1 ? ` ${c.retries}×` : ""})</span>}
                     {c.error && <div className="mt-0.5 max-w-sm text-xs whitespace-normal text-destructive">{c.error}</div>}
                   </Td>
                   <Td className="text-right tabular-nums">{c.turnsCompleted}</Td>

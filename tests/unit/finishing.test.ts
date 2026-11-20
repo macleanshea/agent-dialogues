@@ -1,11 +1,11 @@
-/** PR 5: cost estimate, export, clone with runs, prompt presets, retry of failed conversations. */
+/** PR 5: cost estimate, export, prompt presets, retry of failed conversations, hiding the Mock model. */
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { analyzeRunInProcess } from "@/lib/analysis/service";
-import { defaultRunConfig, type RunConfig } from "@/lib/config";
+import { defaultRunConfig, withoutMock, type RunConfig } from "@/lib/config";
 import { createPgliteDb, type Db } from "@/lib/db";
 import { migrateAndSeed } from "@/lib/db/migrate";
-import { codings, conversations, experiments, promptPresets, reports, runs, turns } from "@/lib/db/schema";
+import { codings, conversations, promptPresets, reports, runs, turns } from "@/lib/db/schema";
 import { mockClient } from "@/lib/engine/mock";
 import { mockJudge } from "@/lib/analysis/judge";
 import type { ModelClient } from "@/lib/engine/types";
@@ -17,7 +17,7 @@ import {
   type BaselineProfile,
 } from "@/lib/estimate";
 import { EXPORT_FORMAT, collect, exportFileName, exportJson, exportMarkdown, findExportTarget } from "@/lib/export";
-import { addDraftRun, copyRunsFromExperiment, declareVariables, getExperimentPanel } from "@/lib/experiments/service";
+import { addDraftRun, declareVariables } from "@/lib/experiments/service";
 import { costUsd } from "@/lib/models";
 import { BUILTIN_PRESETS, deletePreset, listPresets, savePreset, seedPresets } from "@/lib/presets/service";
 import { executeRunInProcess, retryBlocker, retryFailedConversations } from "@/lib/runs/execution";
@@ -268,32 +268,26 @@ describe("prompt presets", () => {
   });
 });
 
-describe("clone with the experiment's other runs", () => {
-  it("copies the variable and each other run as a draft, on top of the new baseline", async () => {
-    const source = await createStandaloneRun(db, config({ turns: 4 }));
-    await declareVariables(db, source.experimentId, ["agentA.systemPrompt"]);
-    const r2 = config({ turns: 4 });
-    r2.agentA.systemPrompt = "Be brief.";
-    expect((await addDraftRun(db, source.experimentId, r2)).ok).toBe(true);
-
-    // The clone changes a shared setting (turns) for the new baseline.
-    const clone = await createStandaloneRun(db, config({ turns: 8, name: "Copy" }));
-    expect(await copyRunsFromExperiment(db, clone.experimentId, source.experimentId)).toEqual({ ok: true, copied: 1 });
-    const panel = (await getExperimentPanel(db, clone.experimentId))!;
-    expect(panel.experiment.declaredVariables).toEqual(["agentA.systemPrompt"]);
-    expect(panel.experiment.locked).toBe(true);
-    expect(panel.runs.map((r) => [r.number, r.status, r.config.turns, r.config.agentA.systemPrompt])).toEqual([
-      [1, "queued", 8, ""],
-      [2, "draft", 8, "Be brief."],
+describe("the Mock model is offered only where MOCK_MODEL is on", () => {
+  it("refuses the Mock model on a deployment and swaps it out of pre-filled forms", async () => {
+    const { missingApiKey } = await import("@/app/runs/new/validate");
+    const before = process.env.MOCK_MODEL;
+    try {
+      delete process.env.MOCK_MODEL;
+      expect(missingApiKey(config())).toContain("Mock model is not available");
+      process.env.MOCK_MODEL = "on";
+      expect(missingApiKey(config())).toBeNull();
+    } finally {
+      if (before === undefined) delete process.env.MOCK_MODEL;
+      else process.env.MOCK_MODEL = before;
+    }
+    const swapped = withoutMock(config({ reportModel: "claude-sonnet-5-5" }));
+    expect([swapped.agentA.model, swapped.agentB.model, swapped.summarizerModel, swapped.reportModel]).toEqual([
+      "claude-opus-5-5",
+      "claude-opus-5-5",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
     ]);
-  });
-
-  it("copies nothing from a standalone run", async () => {
-    const source = await createStandaloneRun(db, config());
-    const clone = await createStandaloneRun(db, config());
-    expect(await copyRunsFromExperiment(db, clone.experimentId, source.experimentId)).toEqual({ ok: true, copied: 0 });
-    const [exp] = await db.select().from(experiments).where(eq(experiments.id, clone.experimentId));
-    expect(exp.declaredVariables).toEqual([]);
   });
 });
 

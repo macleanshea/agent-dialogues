@@ -110,6 +110,26 @@ export function defaultRunConfig(): RunConfig {
 }
 
 /**
+ * The same settings with the Mock model replaced by the default Claude model,
+ * for forms on a deployment where the Mock model is not offered (for example
+ * a clone of a run that used it, or the form's own defaults).
+ */
+export function withoutMock(c: RunConfig): RunConfig {
+  const swap = (m: string) => (m === MOCK_MODEL_ID ? DEFAULT_JUDGE_MODEL : m);
+  return {
+    ...c,
+    agentA: { ...c.agentA, model: swap(c.agentA.model) },
+    agentB: { ...c.agentB, model: swap(c.agentB.model) },
+    summarizerModel: swap(c.summarizerModel),
+    reportModel: swap(c.reportModel),
+  };
+}
+
+export function usesMock(models: string[]): boolean {
+  return models.includes(MOCK_MODEL_ID);
+}
+
+/**
  * The system prompts actually sent to each agent. A blank result means no
  * system parameter is sent at all.
  */

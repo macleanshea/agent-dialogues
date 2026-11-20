@@ -13,7 +13,8 @@ import { toPickerField } from "@/lib/fields/picker";
 import { listPresets, toPresetOption } from "@/lib/presets/service";
 import { baselineProfile } from "@/lib/runs/service";
 import { experimentHref, experimentId, parseIndex, runHref } from "@/lib/ids";
-import { addRunAction } from "../../actions";
+import { addRunAction, addRunAndStartAction } from "../../actions";
+import { mockModelEnabled } from "@/lib/mock-setting";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export default async function AddRunPage({ params }: PageProps<"/experiments/[ex
       {experiment.declaredVariables.length === 0 ? (
         <Card>
           <CardBody className="flex flex-col items-start gap-3 text-sm">
-            <p>No declared variable yet. Set one with the Experiment button.</p>
+            <p>No declared variable yet. Use Create Experiment on the R1 page.</p>
             <ButtonLink href={runHref(experiment.number, 1)}>Open R1</ButtonLink>
           </CardBody>
         </Card>
@@ -60,7 +61,7 @@ export default async function AddRunPage({ params }: PageProps<"/experiments/[ex
             </span>
             <Info>
               Pre-filled from the baseline (R1). Only the declared variable can change, plus the cost ceiling and concurrency, which only
-              affect how this run is executed. The run is saved as a draft.
+              affect how this run is executed. Start it now, or save it as a draft to start later.
             </Info>
           </p>
           <RunForm
@@ -72,6 +73,9 @@ export default async function AddRunPage({ params }: PageProps<"/experiments/[ex
             analysisSummary={<AnalysisSummary version={version} />}
             presets={presets}
             baseline={profile}
+            allowMock={mockModelEnabled()}
+            cancelHref={experimentHref(experiment.number)}
+            startAction={addRunAndStartAction.bind(null, experiment.number)}
           />
         </>
       )}

@@ -125,18 +125,15 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
                       <Td className="text-right tabular-nums">{formatUsd(r.totalCostUsd)}</Td>
                       <Td className="whitespace-nowrap text-muted-foreground">{formatDateTime(r.updatedAt)}</Td>
                       <Td className="py-1.5 align-middle">
-                        <div className="flex justify-end gap-2">
-                          <ExperimentButton
-                            exp={r.number}
-                            declared={r.declaredVariables}
-                            sameAsA={r.sameAsA}
-                            locked={r.locked}
-                            save={declareVariablesAction.bind(null, r.number)}
-                          />
-                          <ButtonLink variant="secondary" href={cloneHref(r.number)}>
-                            Clone
-                          </ButtonLink>
-                        </div>
+                        {/* Only a standalone run has these; an experiment has Clone Run on each of its runs instead. */}
+                        {r.declaredVariables.length === 0 && (
+                          <div className="flex justify-end gap-2">
+                            <ExperimentButton short sameAsA={r.sameAsA} save={declareVariablesAction.bind(null, r.number)} />
+                            <ButtonLink variant="secondary" href={cloneHref(r.number, r.firstRunNumber ?? 1)}>
+                              Clone Run
+                            </ButtonLink>
+                          </div>
+                        )}
                       </Td>
                     </Tr>
                     {isOpen && panel && (

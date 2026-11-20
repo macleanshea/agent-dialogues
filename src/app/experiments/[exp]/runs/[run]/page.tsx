@@ -100,15 +100,9 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
           <StatusBadge status={r.status} />
           <AutoRefresh active={live} />
           <div className="ml-auto flex flex-wrap gap-2">
-            <ExperimentButton
-              exp={experiment.number}
-              declared={variables}
-              sameAsA={sameAsA}
-              locked={experiment.locked}
-              save={declareVariablesAction.bind(null, experiment.number)}
-            />
+            {variables.length === 0 && <ExperimentButton sameAsA={sameAsA} save={declareVariablesAction.bind(null, experiment.number)} />}
             <ButtonLink variant="secondary" href={cloneHref(experiment.number, r.number)}>
-              Clone
+              Clone Run
             </ButtonLink>
             {!isDraft && <ExportLinks exp={experiment.number} run={r.number} version={analysis.versions.length > 1 ? v : undefined} />}
             {runActive && <StopButton onStop={stop} />}

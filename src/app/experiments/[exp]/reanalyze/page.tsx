@@ -6,7 +6,8 @@ import { listFieldLibrary, listVersions } from "@/lib/analysis/service";
 import { getDb } from "@/lib/db";
 import { experiments, runs } from "@/lib/db/schema";
 import { toPickerField } from "@/lib/fields/picker";
-import { DEFAULT_JUDGE_MODEL } from "@/lib/models";
+import { DEFAULT_JUDGE_MODEL, MOCK_MODEL_ID } from "@/lib/models";
+import { mockModelEnabled } from "@/lib/mock-setting";
 import { experimentId, parseIndex, runHref, runId } from "@/lib/ids";
 import { ReanalyzeForm } from "./reanalyze-form";
 
@@ -24,6 +25,8 @@ export default async function ReanalyzePage({ params }: PageProps<"/experiments/
   const fields = (await listFieldLibrary(db)).map(toPickerField);
   const allRuns = await db.select({ number: runs.number, status: runs.status }).from(runs).where(eq(runs.experimentId, experiment.id)).orderBy(runs.number);
   const first = allRuns[0]?.number ?? 1;
+  const allowMock = mockModelEnabled();
+  const swap = (m: string) => (!allowMock && m === MOCK_MODEL_ID ? DEFAULT_JUDGE_MODEL : m);
   const active = allRuns.filter((r) => r.status === "queued" || r.status === "running");
 
   return (
@@ -54,11 +57,12 @@ export default async function ReanalyzePage({ params }: PageProps<"/experiments/
       <ReanalyzeForm
         experimentNumber={experiment.number}
         fields={fields}
+        allowMock={allowMock}
         initial={{
           focus: latest?.focus ?? experiment.analysisFocus,
           fields: (latest?.fieldDefinitions ?? []).map((f) => f.name).filter((n) => fields.some((f) => f.name === n)),
-          summarizerModel: latest?.summarizerModel ?? DEFAULT_JUDGE_MODEL,
-          reportModel: latest?.reportModel ?? DEFAULT_JUDGE_MODEL,
+          summarizerModel: swap(latest?.summarizerModel ?? DEFAULT_JUDGE_MODEL),
+          reportModel: swap(latest?.reportModel ?? DEFAULT_JUDGE_MODEL),
           judgeReadsThinking: latest?.judgeReadsThinking ?? false,
         }}
       />

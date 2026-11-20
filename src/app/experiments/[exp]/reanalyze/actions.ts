@@ -9,6 +9,8 @@ import { getDb } from "@/lib/db";
 import { experiments, runs } from "@/lib/db/schema";
 import { runHref } from "@/lib/ids";
 import { getModel } from "@/lib/models";
+import { usesMock } from "@/lib/config";
+import { MOCK_DISABLED_MESSAGE, mockModelEnabled } from "@/lib/mock-setting";
 import { analysisWorkflow } from "@/workflows/analysis";
 
 export interface ReanalyzeState {
@@ -45,6 +47,7 @@ export async function reanalyzeAction(experimentNumber: number, _prev: Reanalyze
     return { errors, message: "Some settings need fixing." };
   }
   const s = parsed.data;
+  if (!mockModelEnabled() && usesMock([s.summarizerModel, s.reportModel])) return { errors: {}, message: MOCK_DISABLED_MESSAGE };
   if ([s.summarizerModel, s.reportModel].some((m) => getModel(m)?.kind === "anthropic") && !process.env.ANTHROPIC_API_KEY) {
     return { errors: {}, message: "ANTHROPIC_API_KEY is not set for this deployment, so only the Mock model can be used as judge." };
   }

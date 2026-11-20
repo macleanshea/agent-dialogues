@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea, Toggle } from "@/components/ui/form";
 import { LIMITS, OPENING_STUB, SIGN_OFF_LINE, type RunConfig } from "@/lib/config";
@@ -38,7 +38,9 @@ export function RunForm({
   analysisSummary,
   presets = [],
   baseline = null,
-  cloneFrom = null,
+  allowMock = false,
+  cancelHref,
+  startAction,
 }: {
   initial: RunConfig;
   fields: PickerField[];
@@ -51,14 +53,23 @@ export function RunForm({
   presets?: PresetOption[];
   /** The experiment's finished baseline, so the cost estimate can use its actual averages. */
   baseline?: BaselineProfile | null;
-  /** When cloning a whole experiment: its number, and how its other runs are offered for copying. */
-  cloneFrom?: { exp: number; otherRuns: number; variable: string } | null;
+  /** Where Cancel goes. */
+  cancelHref?: string;
+  /** "add" mode: saves the run and starts it at once (the other button saves a draft). */
+  startAction?: (prev: RunFormState, formData: FormData) => Promise<RunFormState>;
+  /** Whether the Mock model is offered (tests only). */
+  allowMock?: boolean;
 }) {
   const [presetList, setPresetList] = useState<PresetOption[]>(presets);
   const addPreset = (p: PresetOption) => setPresetList((prev) => [...prev, p]);
-  const [copyRuns, setCopyRuns] = useState(Boolean(cloneFrom && cloneFrom.otherRuns > 0));
+
   const [v, setV] = useState<Values>(initial);
-  const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
+  const [draftState, formAction, draftPending] = useActionState(action, INITIAL_STATE);
+  const [startState, startFormAction, startPending] = useActionState(startAction ?? action, INITIAL_STATE);
+  // Errors come from whichever button was used last.
+  const [lastUsed, setLastUsed] = useState<"draft" | "start">("draft");
+  const state = lastUsed === "start" ? startState : draftState;
+  const pending = draftPending || startPending;
   const err = (path: string) => state.errors[path];
   const unlocked = new Set<string>([...normalizeVariables(variables).flatMap(pathsFor), ...PER_RUN_SETTINGS]);
   /** True when this setting cannot be changed in this mode. */
@@ -75,8 +86,7 @@ export function RunForm({
   return (
     <form action={formAction} className="flex flex-col gap-6" noValidate>
       <input type="hidden" name="config" value={JSON.stringify(payload)} />
-      {cloneFrom && <input type="hidden" name="cloneFrom" value={cloneFrom.exp} />}
-      {cloneFrom && copyRuns && <input type="hidden" name="copyRuns" value="1" />}
+
 
       <Card>
         <CardHeader title="Name" info={mode === "new" ? "Optional. Leave blank to name it after the models and turn count." : undefined} />
@@ -101,7 +111,7 @@ export function RunForm({
             <Field label="Model" htmlFor="a-model" error={err("agentA.model")}>
               <Select id="a-model"
                 disabled={locked("agentA.model")} value={v.agentA.model} onChange={(e) => setA({ model: e.target.value })}>
-                <ModelOptions agent />
+                <ModelOptions agent allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Effort" htmlFor="a-effort" hint="How deeply the model thinks before replying.">
@@ -150,7 +160,7 @@ export function RunForm({
             <Field label="Model" htmlFor="b-model" error={err("agentB.model")}>
               <Select id="b-model"
                 disabled={locked("agentB.model")} value={v.agentB.model} onChange={(e) => setB({ model: e.target.value })}>
-                <ModelOptions agent />
+                <ModelOptions agent allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Effort" htmlFor="b-effort" hint="How deeply the model thinks before replying.">
@@ -401,12 +411,12 @@ export function RunForm({
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Summarizer model" htmlFor="summarizer" hint="Codes each conversation." error={err("summarizerModel")}>
               <Select id="summarizer" value={v.summarizerModel} onChange={(e) => set("summarizerModel", e.target.value)}>
-                <ModelOptions agent={false} />
+                <ModelOptions agent={false} allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Report model" htmlFor="report" hint="Writes the run report." error={err("reportModel")}>
               <Select id="report" value={v.reportModel} onChange={(e) => set("reportModel", e.target.value)}>
-                <ModelOptions agent={false} />
+                <ModelOptions agent={false} allowMock={allowMock} />
               </Select>
             </Field>
           </div>
@@ -426,27 +436,27 @@ export function RunForm({
         </Card>
       )}
 
-      {cloneFrom && cloneFrom.otherRuns > 0 && (
-        <Card data-testid="clone-runs">
-          <CardHeader title="Experiment" />
-          <CardBody>
-            <Toggle
-              id="copy-runs"
-              label={`Also copy the variable (${cloneFrom.variable}) and the other ${cloneFrom.otherRuns} run${cloneFrom.otherRuns === 1 ? "" : "s"} as drafts`}
-              hint="The settings above become the new baseline (R1), which starts now. Each other run is saved as a draft with its own value of the variable and everything else from the new baseline, so you can change shared settings and run the whole experiment again."
-              checked={copyRuns}
-              onChange={(e) => setCopyRuns(e.target.checked)}
-            />
-          </CardBody>
-        </Card>
-      )}
-
       <CostEstimate values={payload} baseline={baseline} />
 
       <div className="flex items-center gap-4">
-        <Button type="submit" disabled={pending}>
-          {mode === "add" ? (pending ? "Saving…" : "Save draft") : pending ? "Starting…" : "Start run"}
+        {mode === "add" && startAction && (
+          <Button type="submit" disabled={pending} formAction={startFormAction} onClick={() => setLastUsed("start")}>
+            {startPending ? "Starting…" : "Start run"}
+          </Button>
+        )}
+        <Button
+          type="submit"
+          variant={mode === "add" && startAction ? "secondary" : "primary"}
+          disabled={pending}
+          onClick={() => setLastUsed("draft")}
+        >
+          {mode === "add" ? (draftPending ? "Saving…" : "Save draft") : draftPending ? "Starting…" : "Start run"}
         </Button>
+        {cancelHref && (
+          <ButtonLink variant="ghost" href={cancelHref}>
+            Cancel
+          </ButtonLink>
+        )}
         {state.message && !pending && (
           <p className="text-sm text-destructive" role="alert">
             {state.message}

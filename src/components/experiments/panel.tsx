@@ -7,7 +7,7 @@ import { ExportLinks } from "@/components/export-links";
 import { StatusBadge } from "@/components/status";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { addRunHref, comparisonHref, runHref, runId } from "@/lib/ids";
+import { addRunHref, cloneHref, comparisonHref, runHref, runId } from "@/lib/ids";
 import { formatUsd } from "@/lib/utils";
 
 export interface PanelRunView {
@@ -125,6 +125,9 @@ export function ExperimentPanel({
                     )}
                   </Td>
                   <Td className="whitespace-nowrap text-right">
+                    <ButtonLink variant="ghost" href={cloneHref(exp, r.number)} className="mr-1 px-2.5 py-1 text-xs" aria-label={`Clone Run ${runId(r.number)}`}>
+                      Clone Run
+                    </ButtonLink>
                     {start && (
                       <Button type="submit" formAction={start} formNoValidate className="px-2.5 py-1 text-xs">
                         Run

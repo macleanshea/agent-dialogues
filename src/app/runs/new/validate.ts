@@ -1,4 +1,5 @@
-import { runConfigSchema, type RunConfig } from "@/lib/config";
+import { runConfigSchema, usesMock, type RunConfig } from "@/lib/config";
+import { MOCK_DISABLED_MESSAGE, mockModelEnabled } from "@/lib/mock-setting";
 import { getModel } from "@/lib/models";
 
 export interface RunFormState {
@@ -16,8 +17,12 @@ export function parseRunConfig(raw: unknown): { ok: true; config: RunConfig } | 
   return { ok: false, state: { errors, message: "Some settings need fixing. See the messages next to each field." } };
 }
 
-/** The message to show when a real model is chosen but the deployment has no API key. */
+/**
+ * The message to show when the chosen models cannot be used on this
+ * deployment: the Mock model where it is not offered, or a real model with no API key.
+ */
 export function missingApiKey(c: RunConfig): string | null {
+  if (!mockModelEnabled() && usesMock([c.agentA.model, c.agentB.model, c.summarizerModel, c.reportModel])) return MOCK_DISABLED_MESSAGE;
   const usesApi = [c.agentA.model, c.agentB.model, c.summarizerModel, c.reportModel].some((m) => getModel(m)?.kind === "anthropic");
   if (usesApi && !process.env.ANTHROPIC_API_KEY) {
     return "ANTHROPIC_API_KEY is not set for this deployment, so only the Mock model can be used (for the agents, the summarizer, and the report). Add the key in Vercel and redeploy.";

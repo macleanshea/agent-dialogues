@@ -48,9 +48,15 @@ export function addRunHref(exp: number): string {
   return `/experiments/${exp}/runs/new`;
 }
 
-/** The run form pre-filled from an experiment's shared settings, to start a new experiment. */
-export function cloneHref(exp: number): string {
-  return `/runs/new?from=${exp}`;
+/** The run form pre-filled from an experiment's shared settings (or one run's settings), to start a new experiment. */
+export function cloneHref(exp: number, run?: number): string {
+  return run ? `/runs/new?from=${exp}&run=${run}` : `/runs/new?from=${exp}`;
+}
+
+/** Download an experiment, or one run, as JSON or Markdown. */
+export function exportHref(format: "json" | "md", exp: number, run?: number, version?: number): string {
+  const base = run ? `${runHref(exp, run)}/export` : `/experiments/${exp}/export`;
+  return `${base}?format=${format}${version ? `&v=${version}` : ""}`;
 }
 
 export function comparisonHref(exp: number, comparison: number): string {

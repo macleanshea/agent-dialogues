@@ -25,6 +25,8 @@ import { isTextBlock, visibleText } from "./history";
  * - [mock:repeat]  reply with the same text every turn.
  * - [mock:end]     end every reply with [END] on its own line.
  * - [mock:slow]    wait 1.5 seconds before replying.
+ * - [mock:flaky]   throw an error in odd-numbered conversations on their
+ *                  first attempt only, so "Retry failed conversations" succeeds.
  */
 
 const OPENERS = [
@@ -109,6 +111,9 @@ export function mockReply(req: ModelRequest): ModelResponse {
   const { speaker, turnNumber } = req.meta;
   if (system.includes("[mock:error]")) {
     throw new Error("Mock model error (requested with [mock:error])");
+  }
+  if (system.includes("[mock:flaky]") && (req.meta.conversationIndex ?? 0) % 2 === 1 && (req.meta.attempt ?? 0) === 0) {
+    throw new Error("Mock model error (requested with [mock:flaky], first attempt only)");
   }
   validateRequest(req);
 

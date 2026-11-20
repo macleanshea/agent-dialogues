@@ -30,12 +30,13 @@
 - `src/lib/analysis/`: PR 3 analysis. `prompts.ts` holds every analysis prompt; `fields.ts` is the one code path per field type (prompt text, JSON schema, storage, aggregation); `measures.ts` the computed measures; `service.ts` coding, the run report, and re-analysis; `citations.ts` the citation check; `judge.ts` the summarizer/report model client and the Mock judge. `src/workflows/analysis.ts` runs it.
 - `src/lib/experiments/`: PR 4. `variables.ts` the settings that may vary, their labels, and the baseline merge; `service.ts` declaring the variable, draft runs, locking, and the expanded list panel.
 - `src/lib/analysis/comparison.ts`: the comparison report (labels, masked prompt, masked transcript tool, unmasking). `mask.ts` masks model names. `src/workflows/comparison.ts` runs it.
+- PR 5: `src/lib/estimate.ts` the pre-run cost estimate (pure, also runs in the browser); `src/lib/export.ts` JSON and Markdown export (routes under `src/app/experiments/[exp]/.../export/`); `src/lib/presets/` saved prompt presets; `retryFailedConversations` in `src/lib/runs/execution.ts`. The Mock model is offered in forms only when `MOCK_MODEL=on` (`src/lib/mock-setting.ts`); the Playwright config sets it.
 - `src/app/`: pages. `src/components/ui/`: the small component library.
 - `tests/unit/`: unit and database tests (Vitest). `tests/e2e/`: click-through tests (Playwright).
 
 ## Commands
 
-- `npm run dev`: local app. Without `DATABASE_URL` it uses a local in-process Postgres (PGlite) stored in `.pglite/`.
+- `npm run dev`: local app. Without `DATABASE_URL` it uses a local in-process Postgres (PGlite) stored in `.pglite/`. Set `MOCK_MODEL=on` to offer the Mock model locally.
 - `npm test`: unit and database tests. `npm run typecheck`, `npm run lint`.
 - `npm run build && npm run test:e2e`: production build, then browser tests.
 - After changing `src/lib/db/schema.ts`: `npm run db:generate` to create a migration, and commit the new files in `drizzle/`. Migrations apply automatically during the Vercel build.

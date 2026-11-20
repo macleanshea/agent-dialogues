@@ -1,11 +1,15 @@
 "use client";
 
 import { useActionState, useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea, Toggle } from "@/components/ui/form";
 import { LIMITS, OPENING_STUB, SIGN_OFF_LINE, type RunConfig } from "@/lib/config";
+import { CostEstimate } from "@/components/cost-estimate";
 import { FieldPicker } from "@/components/field-picker";
+import { PresetPicker } from "@/components/preset-picker";
+import type { BaselineProfile } from "@/lib/estimate";
+import type { PresetOption } from "@/lib/presets/kinds";
 import { ModelOptions } from "@/components/model-options";
 import type { PickerField } from "@/lib/fields/picker";
 import { EFFORTS, EFFORT_LABELS } from "@/lib/models";
@@ -32,6 +36,11 @@ export function RunForm({
   variables = [],
   action = createRunAction,
   analysisSummary,
+  presets = [],
+  baseline = null,
+  allowMock = false,
+  cancelHref,
+  startAction,
 }: {
   initial: RunConfig;
   fields: PickerField[];
@@ -40,9 +49,27 @@ export function RunForm({
   action?: (prev: RunFormState, formData: FormData) => Promise<RunFormState>;
   /** Shown instead of the analysis settings in "add" mode. */
   analysisSummary?: ReactNode;
+  /** Saved prompt presets, for the lists under the prompts. */
+  presets?: PresetOption[];
+  /** The experiment's finished baseline, so the cost estimate can use its actual averages. */
+  baseline?: BaselineProfile | null;
+  /** Where Cancel goes. */
+  cancelHref?: string;
+  /** "add" mode: saves the run and starts it at once (the other button saves a draft). */
+  startAction?: (prev: RunFormState, formData: FormData) => Promise<RunFormState>;
+  /** Whether the Mock model is offered (tests only). */
+  allowMock?: boolean;
 }) {
+  const [presetList, setPresetList] = useState<PresetOption[]>(presets);
+  const addPreset = (p: PresetOption) => setPresetList((prev) => [...prev, p]);
+
   const [v, setV] = useState<Values>(initial);
-  const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
+  const [draftState, formAction, draftPending] = useActionState(action, INITIAL_STATE);
+  const [startState, startFormAction, startPending] = useActionState(startAction ?? action, INITIAL_STATE);
+  // Errors come from whichever button was used last.
+  const [lastUsed, setLastUsed] = useState<"draft" | "start">("draft");
+  const state = lastUsed === "start" ? startState : draftState;
+  const pending = draftPending || startPending;
   const err = (path: string) => state.errors[path];
   const unlocked = new Set<string>([...normalizeVariables(variables).flatMap(pathsFor), ...PER_RUN_SETTINGS]);
   /** True when this setting cannot be changed in this mode. */
@@ -59,6 +86,7 @@ export function RunForm({
   return (
     <form action={formAction} className="flex flex-col gap-6" noValidate>
       <input type="hidden" name="config" value={JSON.stringify(payload)} />
+
 
       <Card>
         <CardHeader title="Name" info={mode === "new" ? "Optional. Leave blank to name it after the models and turn count." : undefined} />
@@ -83,7 +111,7 @@ export function RunForm({
             <Field label="Model" htmlFor="a-model" error={err("agentA.model")}>
               <Select id="a-model"
                 disabled={locked("agentA.model")} value={v.agentA.model} onChange={(e) => setA({ model: e.target.value })}>
-                <ModelOptions agent />
+                <ModelOptions agent allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Effort" htmlFor="a-effort" hint="How deeply the model thinks before replying.">
@@ -113,6 +141,16 @@ export function RunForm({
                 value={v.agentA.systemPrompt}
                 onChange={(e) => setA({ systemPrompt: e.target.value })}
               />
+              <PresetPicker
+                id="a-system"
+                label="System prompt A"
+                kind="system_prompt"
+                presets={presetList}
+                text={v.agentA.systemPrompt}
+                disabled={locked("agentA.systemPrompt")}
+                onLoad={(text) => setA({ systemPrompt: text })}
+                onSaved={addPreset}
+              />
             </Field>
           </fieldset>
 
@@ -122,7 +160,7 @@ export function RunForm({
             <Field label="Model" htmlFor="b-model" error={err("agentB.model")}>
               <Select id="b-model"
                 disabled={locked("agentB.model")} value={v.agentB.model} onChange={(e) => setB({ model: e.target.value })}>
-                <ModelOptions agent />
+                <ModelOptions agent allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Effort" htmlFor="b-effort" hint="How deeply the model thinks before replying.">
@@ -152,6 +190,16 @@ export function RunForm({
                 disabled={v.agentB.sameAsA || locked("agentB.systemPrompt")}
                 onChange={(e) => setB({ systemPrompt: e.target.value })}
               />
+              <PresetPicker
+                id="b-system"
+                label="System prompt B"
+                kind="system_prompt"
+                presets={presetList}
+                text={v.agentB.sameAsA ? v.agentA.systemPrompt : v.agentB.systemPrompt}
+                disabled={v.agentB.sameAsA || locked("agentB.systemPrompt")}
+                onLoad={(text) => setB({ systemPrompt: text })}
+                onSaved={addPreset}
+              />
             </Field>
             <Toggle
               id="b-same"
@@ -179,6 +227,16 @@ export function RunForm({
               rows={3}
               value={v.openingMessage}
               onChange={(e) => set("openingMessage", e.target.value)}
+            />
+            <PresetPicker
+              id="opening"
+              label="Opening message"
+              kind="opening_message"
+              presets={presetList}
+              text={v.openingMessage}
+              disabled={locked("openingMessage")}
+              onLoad={(text) => set("openingMessage", text)}
+              onSaved={addPreset}
             />
           </Field>
           <Toggle
@@ -353,12 +411,12 @@ export function RunForm({
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Summarizer model" htmlFor="summarizer" hint="Codes each conversation." error={err("summarizerModel")}>
               <Select id="summarizer" value={v.summarizerModel} onChange={(e) => set("summarizerModel", e.target.value)}>
-                <ModelOptions agent={false} />
+                <ModelOptions agent={false} allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Report model" htmlFor="report" hint="Writes the run report." error={err("reportModel")}>
               <Select id="report" value={v.reportModel} onChange={(e) => set("reportModel", e.target.value)}>
-                <ModelOptions agent={false} />
+                <ModelOptions agent={false} allowMock={allowMock} />
               </Select>
             </Field>
           </div>
@@ -378,10 +436,27 @@ export function RunForm({
         </Card>
       )}
 
+      <CostEstimate values={payload} baseline={baseline} />
+
       <div className="flex items-center gap-4">
-        <Button type="submit" disabled={pending}>
-          {mode === "add" ? (pending ? "Saving…" : "Save draft") : pending ? "Starting…" : "Start run"}
+        {mode === "add" && startAction && (
+          <Button type="submit" disabled={pending} formAction={startFormAction} onClick={() => setLastUsed("start")}>
+            {startPending ? "Starting…" : "Start run"}
+          </Button>
+        )}
+        <Button
+          type="submit"
+          variant={mode === "add" && startAction ? "secondary" : "primary"}
+          disabled={pending}
+          onClick={() => setLastUsed("draft")}
+        >
+          {mode === "add" ? (draftPending ? "Saving…" : "Save draft") : draftPending ? "Starting…" : "Start run"}
         </Button>
+        {cancelHref && (
+          <ButtonLink variant="ghost" href={cancelHref}>
+            Cancel
+          </ButtonLink>
+        )}
         {state.message && !pending && (
           <p className="text-sm text-destructive" role="alert">
             {state.message}

@@ -19,7 +19,17 @@ export interface ReanalyzeSettings {
 
 const INITIAL: ReanalyzeState = { errors: {}, message: null };
 
-export function ReanalyzeForm({ experimentNumber, initial, fields }: { experimentNumber: number; initial: ReanalyzeSettings; fields: PickerField[] }) {
+export function ReanalyzeForm({
+  experimentNumber,
+  initial,
+  fields,
+  allowMock = false,
+}: {
+  experimentNumber: number;
+  initial: ReanalyzeSettings;
+  fields: PickerField[];
+  allowMock?: boolean;
+}) {
   const [v, setV] = useState(initial);
   const [state, formAction, pending] = useActionState(reanalyzeAction.bind(null, experimentNumber), INITIAL);
   const set = <K extends keyof ReanalyzeSettings>(k: K, val: ReanalyzeSettings[K]) => setV((p) => ({ ...p, [k]: val }));
@@ -37,12 +47,12 @@ export function ReanalyzeForm({ experimentNumber, initial, fields }: { experimen
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Summarizer model" htmlFor="summarizer" error={state.errors.summarizerModel}>
               <Select id="summarizer" value={v.summarizerModel} onChange={(e) => set("summarizerModel", e.target.value)}>
-                <ModelOptions agent={false} />
+                <ModelOptions agent={false} allowMock={allowMock} />
               </Select>
             </Field>
             <Field label="Report model" htmlFor="report" error={state.errors.reportModel}>
               <Select id="report" value={v.reportModel} onChange={(e) => set("reportModel", e.target.value)}>
-                <ModelOptions agent={false} />
+                <ModelOptions agent={false} allowMock={allowMock} />
               </Select>
             </Field>
           </div>

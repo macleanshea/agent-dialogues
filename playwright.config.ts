@@ -20,6 +20,8 @@ export default defineConfig({
       PGLITE_DIR: ".pglite-e2e",
       DATABASE_URL: "",
       ANTHROPIC_API_KEY: "",
+      // CI has no API key, so the click-through tests use the Mock model, which deployments do not offer.
+      MOCK_MODEL: "on",
       PORT: String(PORT),
       WORKFLOW_LOCAL_DATA_DIR: ".workflow-data-e2e",
     },

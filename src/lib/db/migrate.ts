@@ -2,12 +2,13 @@ import path from "node:path";
 import { asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { turnMeasures } from "../analysis/measures";
 import { PREDEFINED_FIELDS } from "../fields/library";
+import { seedPresets } from "../presets/service";
 import type { Db } from "./index";
 import { fieldDefinitions, turns } from "./schema";
 
 export const MIGRATIONS_FOLDER = path.join(process.cwd(), "drizzle");
 
-/** Applies pending migrations, then upserts the built-in field library. */
+/** Applies pending migrations, then upserts the built-in field library and prompt presets. */
 export async function migrateAndSeed(db: Db, driver: "pglite" | "postgres"): Promise<void> {
   if (driver === "pglite") {
     const { migrate } = await import("drizzle-orm/pglite/migrator");
@@ -17,6 +18,7 @@ export async function migrateAndSeed(db: Db, driver: "pglite" | "postgres"): Pro
     await migrate(db as never, { migrationsFolder: MIGRATIONS_FOLDER });
   }
   await seedFieldLibrary(db);
+  await seedPresets(db);
   await backfillTurnMeasures(db);
 }
 

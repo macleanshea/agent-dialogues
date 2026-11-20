@@ -2,63 +2,38 @@
 
 import { useState, useTransition } from "react";
 import type { ActionState } from "@/app/experiments/[exp]/actions";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { DialogButton } from "@/components/ui/dialog";
 import { Toggle } from "@/components/ui/form";
-import { addRunHref } from "@/lib/ids";
 import { BOTH_MODELS, VARIABLES, hasUnrelatedVariables, normalizeVariables, variableLabel } from "@/lib/experiments/variables";
 
 /**
- * The "Experiment" button (run page header and main list rows) and its
- * dialog: which setting may vary between runs, and "+ Add run". Once the
- * experiment is locked it only shows the variable.
+ * "Create Experiment" (run page header) or "Create Exp." (main list rows):
+ * a dialog asking which setting may vary between runs. Saving turns the
+ * standalone run into an experiment and opens the main list with it
+ * expanded. Only shown for standalone runs: once an experiment exists the
+ * button is gone.
  */
 export function ExperimentButton({
-  exp,
-  declared,
   sameAsA,
-  locked,
   save,
+  short = false,
 }: {
-  exp: number;
-  declared: string[];
   sameAsA: boolean;
-  locked: boolean;
   save: (keys: string[]) => Promise<ActionState>;
+  /** "Create Exp." on the main list, where space is tight. */
+  short?: boolean;
 }) {
   return (
-    <DialogButton label="Experiment" title="Experiment" testId="experiment-dialog">
-      {locked ? (
-        <div className="flex flex-col gap-3 text-sm" data-testid="locked-note">
-          <p>
-            Variable: <strong>{variableLabel(declared, sameAsA)}</strong>
-          </p>
-          <p className="text-muted-foreground">Locked: the experiment has more than one run. Clone it to change the settings.</p>
-        </div>
-      ) : (
-        <ExperimentToggle declared={declared} sameAsA={sameAsA} save={save} />
-      )}
-      {declared.length > 0 && (
-        <div className="mt-4 flex justify-end border-t border-border pt-4">
-          <ButtonLink href={addRunHref(exp)}>+ Add run</ButtonLink>
-        </div>
-      )}
+    <DialogButton label={short ? "Create Exp." : "Create Experiment"} title="Create Experiment" testId="experiment-dialog">
+      <ExperimentToggle sameAsA={sameAsA} save={save} />
     </DialogButton>
   );
 }
 
-/** Which setting or settings may vary between runs. Saving an empty choice makes it a standalone run again. */
-export function ExperimentToggle({
-  declared,
-  sameAsA,
-  save,
-}: {
-  declared: string[];
-  sameAsA: boolean;
-  save: (keys: string[]) => Promise<ActionState>;
-}) {
-  const [on, setOn] = useState(declared.length > 0);
-  const [keys, setKeys] = useState<string[]>(declared);
+/** Which setting or settings may vary between runs. */
+export function ExperimentToggle({ sameAsA, save }: { sameAsA: boolean; save: (keys: string[]) => Promise<ActionState> }) {
+  const [keys, setKeys] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -67,8 +42,6 @@ export function ExperimentToggle({
     setKeys((prev) => normalizeVariables(checked ? [...prev, k] : prev.filter((x) => x !== k)));
   };
   const bothModels = BOTH_MODELS.every((k) => keys.includes(k));
-  const chosen = on ? keys : [];
-  const unchanged = JSON.stringify(normalizeVariables(chosen)) === JSON.stringify(normalizeVariables(declared));
 
   const options: Array<{ key: string; label: string; checked: boolean; onChange: (c: boolean) => void }> = [];
   for (const v of VARIABLES) {
@@ -88,53 +61,43 @@ export function ExperimentToggle({
 
   return (
     <div className="flex flex-col gap-4" data-testid="experiment-toggle">
-      <Toggle
-        id="make-experiment"
-        label="Make this an experiment"
-        hint="Choose which setting may vary between runs. Every other setting stays the same as the baseline (R1)."
-        checked={on}
-        onChange={(e) => {
-          setMessage(null);
-          setOn(e.target.checked);
-        }}
-      />
-      {on && (
-        <fieldset className="flex flex-col gap-3 pl-6">
-          <legend className="mb-2 text-sm font-medium">Settings that vary</legend>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {options.map((o) => (
-              <Toggle key={o.key} id={`var-${o.key}`} label={o.label} checked={o.checked} onChange={(e) => o.onChange(e.target.checked)} />
-            ))}
-          </div>
-          {keys.length > 0 && (
-            <p className="text-sm">
-              Variable: <strong data-testid="variable-preview">{variableLabel(keys, sameAsA)}</strong>
-            </p>
-          )}
-          {hasUnrelatedVariables(keys) && (
-            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" role="alert" data-testid="unrelated-warning">
-              Unrelated settings: a difference between runs can&apos;t be attributed to any one of them.
-            </p>
-          )}
-        </fieldset>
-      )}
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-2 text-sm text-muted-foreground">
+          Which setting varies between runs? Every other setting stays the same as this run, which becomes the baseline (R1).
+        </legend>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {options.map((o) => (
+            <Toggle key={o.key} id={`var-${o.key}`} label={o.label} checked={o.checked} onChange={(e) => o.onChange(e.target.checked)} />
+          ))}
+        </div>
+        {keys.length > 0 && (
+          <p className="text-sm">
+            Variable: <strong data-testid="variable-preview">{variableLabel(keys, sameAsA)}</strong>
+          </p>
+        )}
+        {hasUnrelatedVariables(keys) && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" role="alert" data-testid="unrelated-warning">
+            Unrelated settings: a difference between runs can&apos;t be attributed to any one of them.
+          </p>
+        )}
+      </fieldset>
       <div className="flex items-center gap-3">
         <Button
           type="button"
-          variant="secondary"
-          disabled={pending || unchanged || (on && keys.length === 0)}
+          disabled={pending || keys.length === 0}
           onClick={() =>
             startTransition(async () => {
-              const res = await save(chosen);
-              setMessage(res.message ?? "Saved.");
+              // On success the action opens the main list with the experiment expanded.
+              const res = await save(keys);
+              if (res?.message) setMessage(res.message);
             })
           }
         >
-          {pending ? "Saving…" : "Save"}
+          {pending ? "Creating…" : "Create experiment"}
         </Button>
-        {on && keys.length === 0 && <span className="text-xs text-muted-foreground">Tick at least one setting.</span>}
+        {keys.length === 0 && <span className="text-xs text-muted-foreground">Tick at least one setting.</span>}
         {message && (
-          <span className={message === "Saved." ? "text-sm text-muted-foreground" : "text-sm text-destructive"} role="status">
+          <span className="text-sm text-destructive" role="status">
             {message}
           </span>
         )}

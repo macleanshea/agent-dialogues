@@ -1,7 +1,8 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { defaultExperimentName, snapshotConfig, type RunConfig } from "../config";
 import type { Db } from "../db";
-import { analysisVersions, conversations, experiments, runs, turns, type RunStatus } from "../db/schema";
+import { analysisVersions, codings, conversations, experiments, reports, runs, turns, type RunStatus } from "../db/schema";
+import type { BaselineProfile } from "../estimate";
 
 import { PROMPT_VERSIONS } from "../analysis/prompts";
 import { variableLabel } from "../experiments/variables";
@@ -160,5 +161,86 @@ export async function getConversationPage(
     conversation: conv,
     conversationCount: page.conversations.length,
     turns: rows,
+  };
+}
+
+// ---------- Cost estimate (PR 5) ----------
+
+/**
+ * What a finished baseline run actually used, for the cost estimate: per turn
+ * number, the share of its conversations that reached that turn and their
+ * average tokens there, plus its actual analysis spend. Null while the run
+ * has not finished or has no turns.
+ */
+export async function baselineProfile(db: Db, experimentIdValue: string): Promise<BaselineProfile | null> {
+  const [run] = await db
+    .select()
+    .from(runs)
+    .where(and(eq(runs.experimentId, experimentIdValue), eq(runs.number, 1)));
+  if (!run || !["done", "stopped", "failed"].includes(run.status)) return null;
+  // Conversations that never started (stopped before their first call) say nothing about cost per conversation.
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(conversations)
+    .where(and(eq(conversations.runId, run.id), sql`${conversations.turnsCompleted} > 0`));
+  const started = Number(n);
+  if (started === 0) return null;
+  const rows = await db
+    .select({
+      turn: turns.turnNumber,
+      count: sql<number>`count(*)::int`,
+      inputTokens: sql<number>`avg(${turns.inputTokens})::float8`,
+      cacheReadTokens: sql<number>`avg(${turns.cacheReadTokens})::float8`,
+      cacheWriteTokens: sql<number>`avg(${turns.cacheWriteTokens})::float8`,
+      outputTokens: sql<number>`avg(${turns.outputTokens})::float8`,
+      thinkingTokens: sql<number>`avg(${turns.thinkingTokens})::float8`,
+    })
+    .from(turns)
+    .innerJoin(conversations, eq(conversations.id, turns.conversationId))
+    .where(eq(conversations.runId, run.id))
+    .groupBy(turns.turnNumber)
+    .orderBy(asc(turns.turnNumber));
+
+  // Analysis spend under the latest version with finished codings for this run.
+  const analysis = await db
+    .select({
+      versionId: codings.analysisVersionId,
+      version: analysisVersions.version,
+      coded: sql<number>`count(*) filter (where ${codings.status} = 'done')::int`,
+      cost: sql<number>`coalesce(sum(${codings.costUsd}), 0)::float8`,
+    })
+    .from(codings)
+    .innerJoin(conversations, eq(conversations.id, codings.conversationId))
+    .innerJoin(analysisVersions, eq(analysisVersions.id, codings.analysisVersionId))
+    .where(eq(conversations.runId, run.id))
+    .groupBy(codings.analysisVersionId, analysisVersions.version)
+    .orderBy(desc(analysisVersions.version));
+  const coded = analysis.find((a) => Number(a.coded) > 0);
+  let analysisSpend: BaselineProfile["analysis"] = null;
+  if (coded) {
+    const [report] = await db
+      .select({ cost: reports.costUsd })
+      .from(reports)
+      .where(and(eq(reports.runId, run.id), eq(reports.analysisVersionId, coded.versionId)));
+    analysisSpend = { perConversation: Number(coded.cost) / Number(coded.coded), report: report?.cost ?? 0 };
+  }
+
+  return {
+    runNumber: run.number,
+    conversations: started,
+    modelA: run.config.agentA.model,
+    modelB: run.config.agentB.model,
+    effortA: run.config.agentA.effort,
+    effortB: run.config.agentB.effort,
+    analysis: analysisSpend,
+    turns: rows.map((r) => ({
+      turn: r.turn,
+      reached: Number(r.count) / started,
+      inputTokens: Number(r.inputTokens),
+      cacheReadTokens: Number(r.cacheReadTokens),
+      cacheWriteTokens: Number(r.cacheWriteTokens),
+      outputTokens: Number(r.outputTokens),
+      thinkingTokens: Number(r.thinkingTokens),
+    })),
   };
 }

@@ -73,7 +73,8 @@ test("empty list, then a mock run from the form through to a transcript", async 
   await expect(page).toHaveURL(/\/experiments\/1\/runs\/1$/);
   await expect(page.getByRole("heading", { name: "Smoke test" })).toBeVisible();
   await expect(page.getByTestId("conversation-row")).toHaveCount(3);
-  await expect(page.getByTestId("conversation-row").first()).toContainText("Turn cap reached", { timeout: 30_000 });
+  // R2 shares R1's [mock:flaky] prompt, so its even-numbered conversation is the one that completes.
+  await expect(page.getByTestId("conversation-row").nth(1)).toContainText("Turn cap reached", { timeout: 30_000 });
   await expect(page.getByTestId("conversation-row").last()).toContainText("Turn cap reached", { timeout: 30_000 });
   await expect(page.getByTestId("live")).toHaveCount(0);
   // The cost meter shows the ceiling and the token breakdown, thinking included.
@@ -281,12 +282,12 @@ test("experiments: declare a variable, add and run a draft, lock, expand, compar
   const expN = Number(/experiments\/(\d+)/.exec(page.url())![1]);
   const expLabel = `EXP-${String(expN).padStart(3, "0")}`;
 
-  // The Experiment button opens a dialog. Unrelated settings show a warning;
+  // "Create Experiment" opens a dialog. Unrelated settings show a warning;
   // system prompt A with "same as A" is labelled "Both prompts".
-  await page.getByRole("button", { name: "Experiment", exact: true }).click();
+  await page.getByRole("button", { name: "Create Experiment", exact: true }).click();
   const dialog = page.getByTestId("experiment-dialog");
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel("Make this an experiment").check();
+  await expect(dialog.getByRole("button", { name: "Create experiment" })).toBeDisabled();
   await dialog.getByLabel("Both models").check();
   await expect(dialog.getByLabel("Model A")).toBeChecked();
   await expect(dialog.getByTestId("variable-preview")).toHaveText("Both models");
@@ -297,19 +298,30 @@ test("experiments: declare a variable, add and run a draft, lock, expand, compar
   await dialog.getByLabel("Turns", { exact: true }).uncheck();
   await dialog.getByLabel("System prompt A").check();
   await expect(dialog.getByTestId("variable-preview")).toHaveText("Both prompts");
-  await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(dialog.getByText("Saved.")).toBeVisible();
-  await dialog.getByRole("button", { name: "Close" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.getByTestId("run-subtitle")).toContainText("Both prompts: You are curious.");
+  await dialog.getByRole("button", { name: "Create experiment" }).click();
 
+  // The dialog closes and the list opens with the new experiment expanded.
+  await expect(page).toHaveURL(new RegExp(`\\?open=${expN}`));
+  const expRow = page.getByTestId("experiment-row").filter({ hasText: "Prompt experiment" });
+  await expect(expRow).toContainText("Both prompts");
+  // Once it is an experiment, its row has no Create Exp. or Clone Run; each run row has Clone Run.
+  await expect(expRow.getByRole("button", { name: "Create Exp." })).toHaveCount(0);
+  await expect(expRow.getByRole("link", { name: "Clone Run" })).toHaveCount(0);
+  await expect(page.getByTestId("experiment-panel").getByRole("link", { name: "Clone Run R1" })).toBeVisible();
+
+  // The run page no longer offers Create Experiment, and shows the variable's value.
+  await page.goto(`/experiments/${expN}/runs/1`);
+  await expect(page.getByRole("button", { name: "Create Experiment" })).toHaveCount(0);
+  await expect(page.getByTestId("run-subtitle")).toContainText("Both prompts: You are curious.");
   // Wait for the baseline to finish and be analyzed.
   await expect(page.getByTestId("coding-status")).toContainText("3 of 3 conversations coded", { timeout: 45_000 });
   await expect(page.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
 
-  // + Add run (in the dialog): only the declared variable (and cost ceiling, concurrency) is unlocked.
-  await page.getByRole("button", { name: "Experiment", exact: true }).click();
-  await dialog.getByRole("link", { name: "+ Add run" }).click();
+  // + Add run: only the declared variable (and cost ceiling, concurrency) is unlocked. Cancel goes back.
+  await page.goto(`/experiments/${expN}/runs/new`);
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(new RegExp(`\\?open=${expN}`));
+  await page.getByTestId("experiment-panel").getByRole("link", { name: "+ Add run" }).click();
   await expect(page.getByRole("heading", { name: "Add run: Prompt experiment" })).toBeVisible();
   await expect(page.getByTestId("add-run-intro")).toContainText("Both prompts");
   await expect(page.locator("#a-system")).toBeEnabled();
@@ -320,6 +332,7 @@ test("experiments: declare a variable, add and run a draft, lock, expand, compar
   await expect(page.getByLabel("Opening message to A")).toBeDisabled();
   await expect(page.getByLabel("Cost ceiling per run (USD)")).toBeEnabled();
   await expect(page.getByTestId("analysis-summary")).toContainText("Who asks more questions?");
+  await expect(page.getByRole("button", { name: "Start run" })).toBeVisible();
   await page.locator("#a-system").fill("You are terse.");
   await page.getByRole("button", { name: "Save draft" }).click();
 
@@ -335,15 +348,6 @@ test("experiments: declare a variable, add and run a draft, lock, expand, compar
   await expect(rows.nth(1)).toContainText("You are terse.");
   await expect(rows.nth(1)).toContainText("draft");
   await expect(rows.nth(0)).toContainText("Report");
-
-  // Locked now: the main row's Experiment dialog shows the variable and the lock.
-  const expRow = page.getByTestId("experiment-row").filter({ hasText: "Prompt experiment" });
-  await expect(expRow).toContainText("Both prompts");
-  await expRow.getByRole("button", { name: "Experiment" }).click();
-  const rowDialog = expRow.getByTestId("experiment-dialog");
-  await expect(rowDialog.getByTestId("locked-note")).toContainText("Locked");
-  await expect(rowDialog.getByLabel("Make this an experiment")).toHaveCount(0);
-  await rowDialog.getByRole("button", { name: "Close" }).click();
 
   // Collapse and expand with the (bigger) triangle.
   await expRow.getByRole("link", { name: `Collapse ${expLabel}` }).click();
@@ -382,16 +386,131 @@ test("experiments: declare a variable, add and run a draft, lock, expand, compar
   await page.getByRole("link", { name: expLabel }).click();
   await expect(page.getByTestId("panel-comparisons")).toContainText("Comparison 1");
 
-  // Clone opens the run form pre-filled from the experiment, as a new experiment.
-  await page.getByTestId("experiment-row").filter({ hasText: "Prompt experiment" }).getByRole("link", { name: "Clone" }).click();
-  await expect(page.getByTestId("clone-source")).toContainText(expLabel);
+  // Clone Run on R1's row opens the run form pre-filled from R1, as a new standalone run.
+  await page.getByTestId("experiment-panel").getByRole("link", { name: "Clone Run R1" }).click();
+  await expect(page.getByTestId("clone-source")).toContainText(`${expLabel} / R1`);
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Prompt experiment (copy)");
   await expect(page.locator("#a-system")).toHaveValue("You are curious.");
   await expect(page.getByLabel("Turns")).toHaveValue("4");
   await expect(page.getByLabel("Analysis focus")).toHaveValue("Who asks more questions?");
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page).toHaveURL(/\/$/);
 
   await page.goto("/prompts");
   await expect(page.getByTestId("prompt").filter({ hasText: "Comparison report (v2)" })).toContainText("at most 1,000 words");
+});
+
+test("finishing: cost estimate, presets, retry, export, clone, and start from + Add run", async ({ page }) => {
+  await page.goto("/runs/new");
+
+  // The estimate updates as settings change: free with the Mock model, a range with a real one.
+  // (The Mock model is listed only because the tests turn it on; deployments do not offer it.)
+  const estimate = page.getByTestId("cost-estimate");
+  await expect(estimate.getByTestId("estimate-run")).toHaveText("$0.00 (Mock model)");
+  await page.locator("#a-model").selectOption("claude-opus-5-5");
+  await page.locator("#b-model").selectOption("claude-opus-5-5");
+  await expect(estimate.getByTestId("estimate-run")).toContainText("–");
+  await page.getByLabel("Cost ceiling per run (USD)").fill("0.5");
+  await expect(estimate.getByTestId("estimate-warning")).toContainText("ceiling");
+  await page.getByLabel("Turns").fill("");
+  await expect(estimate).toContainText("to see an estimate");
+  await page.locator("#a-model").selectOption("mock");
+  await page.locator("#b-model").selectOption("mock");
+  await page.getByLabel("Cost ceiling per run (USD)").fill("5");
+
+  // The three seeded presets load into the boxes.
+  await page.getByLabel("System prompt A preset").selectOption({ label: "Another AI, no human" });
+  await expect(page.locator("#a-system")).toHaveValue("You are in a conversation with another AI model. No human is taking part.");
+  await page.getByLabel("System prompt A preset").selectOption({ label: "Blank (no system prompt)" });
+  await expect(page.locator("#a-system")).toHaveValue("");
+  await page.getByLabel("Opening message preset").selectOption({ label: "Act freely" });
+  await expect(page.getByLabel("Opening message to A")).toHaveValue("You may act freely in this open-ended context.");
+
+  // Save a preset from the form; it appears in B's list too.
+  await page.locator("#a-system").fill("[mock:flaky]");
+  await page.getByRole("button", { name: "Save System prompt A as preset" }).click();
+  await page.getByLabel("Name for the System prompt A preset").fill("Flaky mock");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByLabel("System prompt B preset").locator("option", { hasText: "Flaky mock" })).toHaveCount(1);
+
+  // A run whose odd-numbered conversations fail on their first attempt.
+  await page.getByLabel("Name", { exact: true }).fill("Retry test");
+  await page.getByLabel("Turns").fill("4");
+  await page.getByLabel("Number of conversations").fill("3");
+  await useMockJudges(page);
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.getByRole("heading", { name: "Retry test" })).toBeVisible();
+  const runUrl = page.url();
+  const expN = Number(/experiments\/(\d+)/.exec(runUrl)![1]);
+  const banner = page.getByTestId("retry-banner");
+  await expect(banner).toContainText("2 conversations failed", { timeout: 30_000 });
+  await expect(page.getByTestId("coding-status")).toContainText("1 of 1 conversations coded", { timeout: 45_000 });
+  await expect(page.getByTestId("live")).toHaveCount(0, { timeout: 30_000 });
+
+  // Retry: the two failed conversations start again and finish; the run is analyzed again.
+  await banner.getByRole("button", { name: "Retry failed conversations" }).click();
+  const rows = page.getByTestId("conversation-row");
+  await expect(rows.nth(0)).toContainText("Turn cap reached", { timeout: 30_000 });
+  await expect(rows.nth(2)).toContainText("Turn cap reached", { timeout: 30_000 });
+  await expect(rows.nth(0)).toContainText("(retried)");
+  await expect(rows.nth(1)).not.toContainText("(retried)");
+  await expect(page.getByTestId("retry-banner")).toHaveCount(0);
+  await expect(page.getByTestId("run-subtitle")).toContainText("2 conversations retried");
+  await expect(page.getByTestId("coding-status")).toContainText("3 of 3 conversations coded", { timeout: 45_000 });
+  await expect(page.getByTestId("citation-check")).toContainText("Citation check passed", { timeout: 30_000 });
+
+  // Export: JSON and Markdown downloads of the run.
+  const exportLinks = page.getByTestId("export-links");
+  const download = page.waitForEvent("download");
+  await exportLinks.getByRole("link", { name: "Export JSON" }).click();
+  expect((await download).suggestedFilename()).toBe(`EXP-${String(expN).padStart(3, "0")}-R1.json`);
+  const json = await page.request.get(`${runUrl}/export?format=json`);
+  expect(json.headers()["content-type"]).toContain("application/json");
+  const doc = await json.json();
+  expect(doc.runs[0].conversations).toHaveLength(3);
+  expect(doc.runs[0].conversations[0].retries).toBe(1);
+  expect(doc.runs[0].conversations[0].turns[0].content[0].type).toBe("thinking");
+  const md = await (await page.request.get(`${runUrl}/export?format=md`)).text();
+  expect(md).toContain("# EXP-");
+  expect(md).toContain("R1·C03·T4");
+  expect((await page.request.get(`/experiments/${expN}/runs/9/export?format=json`)).status()).toBe(404);
+
+  // The Presets page lists the saved preset (deletable) and the built-in ones (not).
+  await page.getByRole("link", { name: "Presets" }).click();
+  await expect(page.getByRole("heading", { name: "Presets" })).toBeVisible();
+  const presetRows = page.getByTestId("preset-row");
+  await expect(presetRows).toHaveCount(4);
+  await expect(presetRows.filter({ hasText: "Act freely" }).getByRole("button", { name: /Delete/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Delete preset Flaky mock" }).click();
+  await expect(presetRows).toHaveCount(3);
+  await page.getByLabel("Name", { exact: true }).fill("Greeting");
+  await page.getByLabel("For", { exact: true }).selectOption("opening_message");
+  await page.getByLabel("Text", { exact: true }).fill("Hello, who are you?");
+  await page.getByRole("button", { name: "Save preset" }).click();
+  await expect(presetRows).toHaveCount(4);
+
+  // Make it an experiment over Turns, then add a run and start it straight away.
+  await page.goto(runUrl);
+  await page.getByRole("button", { name: "Create Experiment", exact: true }).click();
+  const dialog = page.getByTestId("experiment-dialog");
+  await dialog.getByLabel("Turns", { exact: true }).check();
+  await dialog.getByRole("button", { name: "Create experiment" }).click();
+  await expect(page).toHaveURL(new RegExp(`\\?open=${expN}`));
+  await expect(page.getByTestId("experiment-panel").getByTestId("export-links")).toBeVisible();
+  await page.getByTestId("experiment-panel").getByRole("link", { name: "+ Add run" }).click();
+  await expect(page.getByTestId("cost-estimate")).toContainText("from R1's actual averages");
+  await page.getByLabel("Turns").fill("6");
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page).toHaveURL(new RegExp(`/experiments/${expN}/runs/2$`));
+  await expect(page.getByTestId("conversation-row")).toHaveCount(3);
+  // R2 shares R1's [mock:flaky] prompt, so its even-numbered conversation is the one that completes.
+  await expect(page.getByTestId("conversation-row").nth(1)).toContainText("Turn cap reached", { timeout: 30_000 });
+
+  // Clone Run on the run page copies that run's settings into a new standalone run.
+  await page.getByRole("link", { name: "Clone Run" }).click();
+  await expect(page.getByTestId("clone-source")).toContainText("/ R2");
+  await expect(page.getByLabel("Turns")).toHaveValue("6");
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Retry test R2 (copy)");
 });
 
 test("unknown pages show not found", async ({ page }) => {

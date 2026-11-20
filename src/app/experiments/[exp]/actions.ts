@@ -23,18 +23,32 @@ export interface ActionState {
   message: string | null;
 }
 
-/** The run-page toggle: saves which settings may vary. An empty list makes it a standalone run again. */
+/**
+ * "Create Experiment": saves which settings may vary, then opens the main
+ * list with the new experiment expanded.
+ */
 export async function declareVariablesAction(experimentNumber: number, keys: string[]): Promise<ActionState> {
+  if (keys.length === 0) return { message: "Tick at least one setting." };
   const db = await getDb();
   const exp = await getExperimentByNumber(db, experimentNumber);
   if (!exp) return { message: "This experiment no longer exists." };
   const res = await declareVariables(db, exp.id, keys);
+  if (!res.ok) return { message: res.message };
   revalidatePath("/", "layout");
-  return { message: res.ok ? null : res.message };
+  redirect(experimentHref(experimentNumber));
 }
 
-/** "+ Add run": saves the run as a draft and goes back to the experiment in the list. */
+/** "+ Add run" with "Save draft": saves the run as a draft and goes back to the experiment in the list. */
 export async function addRunAction(experimentNumber: number, _prev: RunFormState, formData: FormData): Promise<RunFormState> {
+  return addRun(experimentNumber, formData, false);
+}
+
+/** "+ Add run" with "Start run": saves the run, starts it at once, and opens its page. */
+export async function addRunAndStartAction(experimentNumber: number, _prev: RunFormState, formData: FormData): Promise<RunFormState> {
+  return addRun(experimentNumber, formData, true);
+}
+
+async function addRun(experimentNumber: number, formData: FormData, startNow: boolean): Promise<RunFormState> {
   let raw: unknown;
   try {
     raw = JSON.parse(String(formData.get("config") ?? ""));
@@ -51,6 +65,10 @@ export async function addRunAction(experimentNumber: number, _prev: RunFormState
   if (!exp) return { errors: {}, message: "This experiment no longer exists." };
   const res = await addDraftRun(db, exp.id, parsed.config);
   if (!res.ok) return { errors: res.errors ?? {}, message: res.message };
+  if (startNow) {
+    if (await queueDraftRun(db, res.runId)) await startRunWorkflow(db, res.runId);
+    redirect(runHref(experimentNumber, res.runNumber));
+  }
   redirect(experimentHref(experimentNumber));
 }
 

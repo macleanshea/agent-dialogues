@@ -74,7 +74,7 @@ export function RunConfigView({ config }: { config: RunConfigSnapshot }) {
         </dl>
       </section>
       <section>
-        <h3 className="mb-1 text-sm font-semibold">Analysis (as first set; see the Analysis panel for re-analysis)</h3>
+        <h3 className="mb-1 text-sm font-semibold">Analysis (at creation)</h3>
         <dl>
           <Row label="Analysis focus">
             {c.analysisFocus ? c.analysisFocus : <span className="text-muted-foreground italic">None</span>}

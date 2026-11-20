@@ -4,7 +4,7 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { Markdown } from "@/components/markdown";
 import { StatusBadge } from "@/components/status";
-import { ButtonLink } from "@/components/ui/button";
+import { CitationCheck, wordCount } from "@/components/analysis/report";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { linkCitations } from "@/lib/analysis/citations";
@@ -57,11 +57,7 @@ export default async function ComparisonPage({ params }: PageProps<"/experiments
       <Card data-testid="comparison-runs">
         <CardHeader
           title="Runs"
-          description={
-            finished
-              ? "The writer saw each run only by its random letter, with model names masked as [model]. Unmasked now that the report is written."
-              : "The writer sees each run only by a random letter, with model names masked. Which run is which is shown once the report is written."
-          }
+          info="The writer sees each run only by a random letter, with model and maker names masked as [model]. Which run is which is shown once the report is written."
         />
         <Table>
           <thead>
@@ -92,7 +88,7 @@ export default async function ComparisonPage({ params }: PageProps<"/experiments
                     </>
                   ) : (
                     <Td colSpan={3} className="text-muted-foreground italic">
-                      Hidden until the report is written
+                      Hidden until done
                     </Td>
                   )}
                 </Tr>
@@ -103,12 +99,11 @@ export default async function ComparisonPage({ params }: PageProps<"/experiments
       </Card>
 
       <Card data-testid="comparison-report">
-        <CardHeader title="Comparison report" description="Every R·C·T citation links to its turn. Quotes keep [model] where the writer saw a masked name." />
+        <CardHeader title="Report" info="Citations link to their turns. Quotes keep [model] where the writer saw a masked name, and are checked against the masked text." />
         <CardBody className="flex flex-col gap-4">
           {!finished && (
             <p className="text-sm text-muted-foreground">
-              Writing the comparison…{" "}
-              {c.opened.length > 0 && `Opened ${c.opened.length} transcript${c.opened.length > 1 ? "s" : ""} so far.`}
+              Writing… {c.opened.length > 0 && `${c.opened.length} transcript${c.opened.length > 1 ? "s" : ""} opened.`}
             </p>
           )}
           {c.error && (
@@ -116,42 +111,12 @@ export default async function ComparisonPage({ params }: PageProps<"/experiments
               {c.error}
             </p>
           )}
-          {check && (
-            <div
-              data-testid="citation-check"
-              className={
-                check.failures.length
-                  ? "rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm dark:border-red-900 dark:bg-red-950/40"
-                  : "rounded-md bg-muted px-3 py-2 text-sm"
-              }
-            >
-              {check.failures.length === 0 ? (
-                <span>
-                  Citation check passed: {check.citations} citation{check.citations === 1 ? "" : "s"} and {check.quotes} quote
-                  {check.quotes === 1 ? "" : "s"} checked against the stored turns (masked as the writer saw them).
-                </span>
-              ) : (
-                <>
-                  <strong>
-                    Citation check: {check.failures.length} problem{check.failures.length === 1 ? "" : "s"}
-                  </strong>
-                  <ul className="mt-1 list-disc pl-5">
-                    {check.failures.map((f, i) => (
-                      <li key={i}>
-                        <span className="font-mono">{f.citation}</span>: {f.problem}
-                        {f.quote && <> Quote: “{f.quote}”</>}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          )}
+          {check && <CitationCheck check={check} />}
           {c.warning && <p className="text-sm text-amber-700 dark:text-amber-300">{c.warning}</p>}
           {c.status === "done" && c.content && <Markdown>{linkCitations(c.content, experiment.number)}</Markdown>}
           {c.status === "done" && (
             <footer className="border-t border-border pt-3 text-xs text-muted-foreground" data-testid="comparison-footer">
-              Transcripts opened by the writer ({c.opened.length}):{" "}
+              {c.content ? `${wordCount(c.content)} words · ` : ""}Transcripts opened ({c.opened.length}):{" "}
               {c.opened.length === 0
                 ? "none."
                 : c.opened.map((o, i) => (
@@ -166,7 +131,7 @@ export default async function ComparisonPage({ params }: PageProps<"/experiments
           )}
           {c.status === "done" && c.maskedContent && (
             <details className="rounded-md border border-border px-3 py-2 text-sm">
-              <summary className="cursor-pointer text-muted-foreground">The report as the writer wrote it (masked)</summary>
+              <summary className="cursor-pointer text-muted-foreground">Masked original</summary>
               <pre className="mt-2 font-mono text-xs whitespace-pre-wrap" data-testid="masked-report">
                 {c.maskedContent}
               </pre>
@@ -175,11 +140,6 @@ export default async function ComparisonPage({ params }: PageProps<"/experiments
         </CardBody>
       </Card>
 
-      <div>
-        <ButtonLink variant="secondary" href="/prompts">
-          See the comparison prompt
-        </ButtonLink>
-      </div>
     </div>
   );
 }

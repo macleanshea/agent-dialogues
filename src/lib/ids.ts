@@ -48,8 +48,9 @@ export function addRunHref(exp: number): string {
   return `/experiments/${exp}/runs/new`;
 }
 
-export function sharedSettingsHref(exp: number): string {
-  return `/experiments/${exp}/settings`;
+/** The run form pre-filled from an experiment's shared settings, to start a new experiment. */
+export function cloneHref(exp: number): string {
+  return `/runs/new?from=${exp}`;
 }
 
 export function comparisonHref(exp: number, comparison: number): string {

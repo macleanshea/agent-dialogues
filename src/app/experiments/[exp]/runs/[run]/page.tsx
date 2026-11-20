@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Fragment } from "react";
 import { notFound } from "next/navigation";
 import { FieldAggregates } from "@/components/analysis/aggregates";
 import { TurnLineChart } from "@/components/analysis/charts";
@@ -8,27 +7,26 @@ import { VersionPicker, versionParam } from "@/components/analysis/version-picke
 import { AutoRefresh } from "@/components/auto-refresh";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { CostMeter } from "@/components/cost-meter";
-import { StopButton } from "@/components/stop-button";
+import { ExperimentButton } from "@/components/experiments/toggle";
 import { RunConfigView } from "@/components/run-config";
 import { StatusBadge, stopReasonLabel } from "@/components/status";
-import { ButtonLink } from "@/components/ui/button";
-import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { StopButton } from "@/components/stop-button";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Section } from "@/components/ui/section";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { formatValue, slotsFor, type FieldDef } from "@/lib/analysis/fields";
 import { PER_TURN_MEASURES } from "@/lib/analysis/measures";
 import { getRunAnalysis } from "@/lib/analysis/queries";
 import { customFieldNames, listFieldLibrary } from "@/lib/analysis/service";
 import { getDb } from "@/lib/db";
-import { conversationHref, conversationId, experimentId, parseIndex, runHref, runId } from "@/lib/ids";
+import { normalizeVariables, variableLabel, variableValues } from "@/lib/experiments/variables";
+import { conversationHref, conversationId, experimentHref, experimentId, parseIndex, runHref, runId } from "@/lib/ids";
 import { modelLabel } from "@/lib/models";
 import { getRunPage } from "@/lib/runs/service";
 import { formatDateTime, formatNumber, formatUsd } from "@/lib/utils";
-import { stopRunAction } from "./actions";
-import { ExperimentToggle } from "@/components/experiments/toggle";
-import { Button } from "@/components/ui/button";
-import { VARIABLES, normalizeVariables, variableLabel, variableValue } from "@/lib/experiments/variables";
-import { addRunHref, experimentHref, sharedSettingsHref } from "@/lib/ids";
 import { declareVariablesAction, deleteDraftFromRunPageAction, startDraftFromRunPageAction } from "../../actions";
+import { stopRunAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +46,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
   const analysis = await getRunAnalysis(db, r, versionParam(await searchParams));
   const custom = customFieldNames(analysis.version?.fieldDefinitions ?? [], await listFieldLibrary(db));
   const defs = (analysis.version?.fieldDefinitions ?? []) as FieldDef[];
-  // The most common coding error, shown in the Analysis panel.
+  // The most common coding error, shown in the Analysis section.
   const errorCounts = new Map<string, number>();
   for (const c of analysis.codings) if (c.coding.error) errorCounts.set(c.coding.error, (errorCounts.get(c.coding.error) ?? 0) + 1);
   const firstError = [...errorCounts.entries()].sort((x, y) => y[1] - x[1]).map(([message, count]) => ({ message, count }))[0];
@@ -75,12 +73,11 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
   const stop = stopRunAction.bind(null, experiment.number, r.number);
   const variables = normalizeVariables(experiment.declaredVariables);
   const sameAsA = (experiment.sharedSettings ?? r.config).agentB.sameAsA;
-  const variable = variableLabel(variables, sameAsA);
   const isDraft = r.status === "draft";
-  const diff = Object.entries(r.configDiff);
+  const coded = analysis.status && analysis.status.total > 0 ? `${analysis.status.done} of ${analysis.status.total} coded` : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Breadcrumbs
           items={[
@@ -93,98 +90,54 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
           <h1 className="text-2xl font-semibold tracking-tight">{experiment.name}</h1>
           <StatusBadge status={r.status} />
           <AutoRefresh active={live} />
-          {runActive && (
-            <div className="ml-auto">
-              <StopButton onStop={stop} />
-            </div>
-          )}
+          <div className="ml-auto flex flex-wrap gap-2">
+            <ExperimentButton
+              exp={experiment.number}
+              declared={variables}
+              sameAsA={sameAsA}
+              locked={experiment.locked}
+              save={declareVariablesAction.bind(null, experiment.number)}
+            />
+            {runActive && <StopButton onStop={stop} />}
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {experimentId(experiment.number)} / {runId(r.number)} · Started {formatDateTime(r.startedAt)} · Cost{" "}
-          {formatUsd(r.costUsd)}
+        <p className="text-sm text-muted-foreground" data-testid="run-subtitle">
+          {experimentId(experiment.number)} / {runId(r.number)}
+          {variables.length > 0 && (
+            <>
+              {" · "}
+              {variableLabel(variables, sameAsA)}: <span className="text-foreground">{variableValues(variables, r.config)}</span>
+            </>
+          )}
+          {" · "}Started {formatDateTime(r.startedAt)} · Cost {formatUsd(r.costUsd)}
           {analysis.status ? ` · Analysis ${formatUsd(analysis.status.costUsd)}` : ""}
         </p>
         {r.error && <p className="text-sm text-destructive">{r.error}</p>}
-        {r.stopRequested && live && runActive && (
-          <p className="text-sm text-muted-foreground">
-            Stopping. Conversations that are mid-call finish that call, keep the turn, and then stop.
-          </p>
-        )}
+        {r.stopRequested && live && runActive && <p className="text-sm text-muted-foreground">Stopping…</p>}
       </div>
 
       {isDraft && (
         <Card data-testid="draft-banner">
-          <CardBody className="flex flex-wrap items-center gap-3 text-sm">
-            <p>This run is a draft. Nothing has run yet.</p>
-            <form className="ml-auto flex gap-2">
+          <form className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
+            <span>Draft</span>
+            <span className="ml-auto flex gap-2">
               <Button type="submit" formAction={startDraftFromRunPageAction.bind(null, experiment.number, r.number)}>
                 Run
               </Button>
               <Button type="submit" variant="secondary" formAction={deleteDraftFromRunPageAction.bind(null, experiment.number, r.number)}>
                 Delete draft
               </Button>
-            </form>
-          </CardBody>
+            </span>
+          </form>
         </Card>
       )}
 
-      <Card data-testid="experiment-card">
-        <CardHeader
-          title="Experiment"
-          description={
-            variables.length
-              ? `${experimentId(experiment.number)} varies ${variable}. Every other setting is shared with the baseline (R1).`
-              : "This is a standalone run: an experiment with one run and no declared variable."
-          }
-          actions={
-            variables.length ? (
-              <div className="flex flex-wrap gap-2">
-                <ButtonLink variant="secondary" href={sharedSettingsHref(experiment.number)}>
-                  Shared settings
-                </ButtonLink>
-                <ButtonLink href={addRunHref(experiment.number)}>+ Add run</ButtonLink>
-              </div>
-            ) : undefined
-          }
-        />
-        <CardBody className="flex flex-col gap-3 text-sm">
-          {variables.length > 0 && (
-            <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]" data-testid="variable-values">
-              {variables.map((k) => (
-                <Fragment key={k}>
-                  <dt className="text-muted-foreground">{VARIABLES.find((x) => x.key === k)!.label} in this run</dt>
-                  <dd className="whitespace-pre-wrap">{variableValue(k, r.config, { short: false })}</dd>
-                </Fragment>
-              ))}
-              {r.number > 1 && (
-                <>
-                  <dt className="text-muted-foreground">Differs from R1</dt>
-                  <dd className="font-mono text-xs">{diff.length ? diff.map(([k]) => k).join(", ") : "nothing (a repeat of the baseline)"}</dd>
-                </>
-              )}
-            </dl>
-          )}
-          {experiment.locked ? (
-            <p className="text-muted-foreground" data-testid="locked-note">
-              Locked: this experiment has more than one run, so its shared settings and declared variable can no longer change. To change them,
-              clone the experiment (cloning arrives in a later update). Re-analysis is the one exception: it applies to all runs at once.
-            </p>
-          ) : (
-            <ExperimentToggle
-              declared={variables}
-              sameAsA={sameAsA}
-              save={declareVariablesAction.bind(null, experiment.number)}
-            />
-          )}
-        </CardBody>
-      </Card>
-
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-4">
         {[
           ["Conversations", formatNumber(conversations.length)],
           ["Done", formatNumber(done)],
           ["Errored", formatNumber(errored)],
-          ["Turns recorded", formatNumber(turns)],
+          ["Turns", formatNumber(turns)],
         ].map(([label, value]) => (
           <Card key={label} className="px-4 py-3">
             <div className="text-xs text-muted-foreground">{label}</div>
@@ -193,134 +146,7 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
         ))}
       </div>
 
-      <CostMeter costUsd={r.costUsd} ceilingUsd={r.config.costCeilingUsd} totals={totals} />
-
-      <Card data-testid="analysis-panel">
-        <CardHeader
-          title="Analysis"
-          description="A judge model codes each conversation against the selected fields, then a report writer reads the codings and opens transcripts."
-          actions={
-            <div className="flex flex-wrap gap-2">
-              <ButtonLink variant="secondary" href="/prompts">
-                Prompts
-              </ButtonLink>
-              <ButtonLink variant="secondary" href={`/experiments/${experiment.number}/reanalyze`}>
-                Re-analyze
-              </ButtonLink>
-            </div>
-          }
-        />
-        <CardBody className="flex flex-col gap-3 text-sm">
-          {analysis.version ? (
-            <>
-              <VersionPicker base={base} versions={analysis.versions.map((x) => x.version)} current={analysis.version.version} />
-              <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
-                <dt className="text-muted-foreground">Focus</dt>
-                <dd>{analysis.version.focus || <span className="text-muted-foreground italic">None</span>}</dd>
-                <dt className="text-muted-foreground">Fields</dt>
-                <dd className="font-mono text-xs">{defs.length ? defs.map((d) => d.name).join(", ") : "none"}</dd>
-                <dt className="text-muted-foreground">Judges</dt>
-                <dd>
-                  Summarizer {modelLabel(analysis.version.summarizerModel)} · Report {modelLabel(analysis.version.reportModel)} · Thinking
-                  summaries {analysis.version.judgeReadsThinking ? "shown" : "hidden"} · Prompts{" "}
-                  {Object.entries(analysis.version.promptVersions)
-                    .map(([k, val]) => `${k} ${val}`)
-                    .join(", ")}
-                </dd>
-                <dt className="text-muted-foreground">Coding</dt>
-                <dd data-testid="coding-status">
-                  {analysis.status && analysis.status.total > 0 ? (
-                    <>
-                      {analysis.status.done} of {analysis.status.total} conversations coded
-                      {analysis.status.errored ? `, ${analysis.status.errored} failed` : ""}
-                      {analysis.status.waiting ? `, ${analysis.status.waiting} waiting` : ""} · {formatUsd(analysis.status.costUsd)}
-                    </>
-                  ) : runActive ? (
-                    "Starts when the run finishes."
-                  ) : (
-                    "Not analyzed under this version."
-                  )}
-                </dd>
-                {firstError && (
-                  <>
-                    <dt className="text-destructive">Error</dt>
-                    <dd className="text-destructive" data-testid="coding-error">
-                      {firstError.count > 1 ? `${firstError.count} codings failed with: ` : "A coding failed with: "}
-                      {firstError.message}
-                    </dd>
-                  </>
-                )}
-              </dl>
-            </>
-          ) : (
-            <p className="text-muted-foreground">No analysis version.</p>
-          )}
-        </CardBody>
-      </Card>
-
-      <div id="run-report">
-        <RunReport report={analysis.report} exp={experiment.number} />
-      </div>
-
-      <Card>
-        <CardHeader
-          title="Coded fields"
-          description={
-            analysis.status?.done
-              ? `Aggregated across ${analysis.status.done} coded conversation${analysis.status.done === 1 ? "" : "s"}.`
-              : "Appears once conversations are coded."
-          }
-        />
-        <CardBody>
-          {analysis.status?.done ? (
-            <FieldAggregates aggregates={analysis.aggregates} exp={experiment.number} run={r.number} custom={custom} />
-          ) : (
-            <p className="text-sm text-muted-foreground">Nothing coded yet.</p>
-          )}
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="Computed measures" description="Counted from the stored turns, with no model call. Lines are averaged across conversations at each turn." />
-        <CardBody className="flex flex-col gap-6">
-          <Table data-testid="speaker-measures">
-            <thead>
-              <tr>
-                <Th>Speaker</Th>
-                <Th className="text-right">Turns</Th>
-                <Th className="text-right">Tokens</Th>
-                <Th className="text-right">Thinking tokens</Th>
-                <Th className="text-right">Mean visible length</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {analysis.speakers.map((s) => (
-                <Tr key={s.speaker}>
-                  <Td>{s.speaker}</Td>
-                  <Td className="text-right tabular-nums">{formatNumber(s.turns)}</Td>
-                  <Td className="text-right tabular-nums">{formatNumber(Math.round(s.tokens))}</Td>
-                  <Td className="text-right tabular-nums">{formatNumber(Math.round(s.thinkingTokens))}</Td>
-                  <Td className="text-right tabular-nums">{formatNumber(Math.round(s.meanLength))} chars</Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
-          <div className="grid gap-6 md:grid-cols-2">
-            {PER_TURN_MEASURES.map((m) => (
-              <TurnLineChart
-                key={m.key}
-                testId={`chart-${m.key}`}
-                title={m.label}
-                format={m.format}
-                points={analysis.series[m.key].map((p) => ({ x: p.turn, y: p.value, note: `${p.n} conversation${p.n === 1 ? "" : "s"}` }))}
-              />
-            ))}
-          </div>
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="Conversations" description="Click a conversation to read its transcript and coding." />
+      <Section id="conversations" title="Conversations" open testId="conversations-section">
         <Table>
           <thead>
             <tr>
@@ -359,9 +185,9 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
                   <Td>
                     <StatusBadge status={c.status} />
                   </Td>
-                  <Td>
+                  <Td className="whitespace-nowrap">
                     {stopReasonLabel(c.stopReason)}
-                    {c.error && <div className="mt-0.5 max-w-sm text-xs text-destructive">{c.error}</div>}
+                    {c.error && <div className="mt-0.5 max-w-sm text-xs whitespace-normal text-destructive">{c.error}</div>}
                   </Td>
                   <Td className="text-right tabular-nums">{c.turnsCompleted}</Td>
                   <Td className="whitespace-nowrap">
@@ -407,14 +233,150 @@ export default async function RunPage({ params, searchParams }: PageProps<"/expe
             })}
           </tbody>
         </Table>
-      </Card>
+      </Section>
 
-      <Card>
-        <CardHeader title="Config" description="A full copy of the settings this run used." />
-        <CardBody>
+      <Section id="config" title="Config" testId="config-section">
+        <div className="px-5 py-4">
           <RunConfigView config={r.config} />
-        </CardBody>
-      </Card>
+        </div>
+      </Section>
+
+      <Section
+        id="report"
+        title="Report"
+        testId="report-section"
+        meta={analysis.report ? <StatusBadge status={analysis.report.status} /> : <span>Not written yet</span>}
+      >
+        <RunReport report={analysis.report} exp={experiment.number} />
+      </Section>
+
+      <Section id="fields" title="Fields" testId="fields-section" meta={analysis.status?.done ? `${analysis.status.done} coded` : undefined}>
+        <div className="px-5 py-4">
+          {analysis.status?.done ? (
+            <FieldAggregates aggregates={analysis.aggregates} exp={experiment.number} run={r.number} custom={custom} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nothing coded yet.</p>
+          )}
+        </div>
+      </Section>
+
+      <Section id="measures" title="Measures" testId="measures-section" info="Counted from the stored turns, with no model call. Lines are averaged across conversations at each turn.">
+        <div className="flex flex-col gap-6 px-5 py-4">
+          <Table data-testid="speaker-measures">
+            <thead>
+              <tr>
+                <Th>Speaker</Th>
+                <Th className="text-right">Turns</Th>
+                <Th className="text-right">Tokens</Th>
+                <Th className="text-right">Thinking tokens</Th>
+                <Th className="text-right">Mean visible length</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {analysis.speakers.map((s) => (
+                <Tr key={s.speaker}>
+                  <Td>{s.speaker}</Td>
+                  <Td className="text-right tabular-nums">{formatNumber(s.turns)}</Td>
+                  <Td className="text-right tabular-nums">{formatNumber(Math.round(s.tokens))}</Td>
+                  <Td className="text-right tabular-nums">{formatNumber(Math.round(s.thinkingTokens))}</Td>
+                  <Td className="text-right tabular-nums">{formatNumber(Math.round(s.meanLength))} chars</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+          <div className="grid gap-6 md:grid-cols-2">
+            {PER_TURN_MEASURES.map((m) => (
+              <TurnLineChart
+                key={m.key}
+                testId={`chart-${m.key}`}
+                title={m.label}
+                format={m.format}
+                points={analysis.series[m.key].map((p) => ({ x: p.turn, y: p.value, note: `${p.n} conversation${p.n === 1 ? "" : "s"}` }))}
+              />
+            ))}
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        id="cost"
+        title="Cost"
+        testId="cost-section"
+        meta={`${formatUsd(r.costUsd)} of ${formatUsd(r.config.costCeilingUsd)}`}
+        info="Checked against the ceiling before every model call. Analysis cost is separate and does not count toward the ceiling."
+      >
+        <CostMeter costUsd={r.costUsd} ceilingUsd={r.config.costCeilingUsd} totals={totals} />
+      </Section>
+
+      <Section
+        id="analysis"
+        title="Analysis"
+        testId="analysis-panel"
+        meta={
+          <>
+            {analysis.version && <span>v{analysis.version.version}</span>}
+            {coded && <span data-testid="coding-summary">{coded}</span>}
+          </>
+        }
+        info="A judge model codes each conversation against the selected fields, then a report writer reads the codings and opens transcripts."
+        actions={
+          <>
+            <ButtonLink variant="secondary" href="/prompts" className="px-2.5 py-1 text-xs">
+              Prompts
+            </ButtonLink>
+            <ButtonLink variant="secondary" href={`/experiments/${experiment.number}/reanalyze`} className="px-2.5 py-1 text-xs">
+              Re-analyze
+            </ButtonLink>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3 px-5 py-4 text-sm">
+          {analysis.version ? (
+            <>
+              <VersionPicker base={base} versions={analysis.versions.map((x) => x.version)} current={analysis.version.version} />
+              <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
+                <dt className="text-muted-foreground">Focus</dt>
+                <dd>{analysis.version.focus || <span className="text-muted-foreground italic">None</span>}</dd>
+                <dt className="text-muted-foreground">Fields</dt>
+                <dd className="font-mono text-xs">{defs.length ? defs.map((d) => d.name).join(", ") : "none"}</dd>
+                <dt className="text-muted-foreground">Judges</dt>
+                <dd>
+                  Summarizer {modelLabel(analysis.version.summarizerModel)} · Report {modelLabel(analysis.version.reportModel)} · Thinking
+                  summaries {analysis.version.judgeReadsThinking ? "shown" : "hidden"} · Prompts{" "}
+                  {Object.entries(analysis.version.promptVersions)
+                    .map(([k, val]) => `${k} ${val}`)
+                    .join(", ")}
+                </dd>
+                <dt className="text-muted-foreground">Coding</dt>
+                <dd data-testid="coding-status">
+                  {analysis.status && analysis.status.total > 0 ? (
+                    <>
+                      {analysis.status.done} of {analysis.status.total} conversations coded
+                      {analysis.status.errored ? `, ${analysis.status.errored} failed` : ""}
+                      {analysis.status.waiting ? `, ${analysis.status.waiting} waiting` : ""} · {formatUsd(analysis.status.costUsd)}
+                    </>
+                  ) : runActive ? (
+                    "Starts when the run finishes."
+                  ) : (
+                    "Not analyzed under this version."
+                  )}
+                </dd>
+                {firstError && (
+                  <>
+                    <dt className="text-destructive">Error</dt>
+                    <dd className="text-destructive" data-testid="coding-error">
+                      {firstError.count > 1 ? `${firstError.count} codings failed with: ` : "A coding failed with: "}
+                      {firstError.message}
+                    </dd>
+                  </>
+                )}
+              </dl>
+            </>
+          ) : (
+            <p className="text-muted-foreground">No analysis version.</p>
+          )}
+        </div>
+      </Section>
     </div>
   );
 }

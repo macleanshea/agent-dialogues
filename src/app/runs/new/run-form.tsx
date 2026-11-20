@@ -24,7 +24,6 @@ const INITIAL_STATE: RunFormState = { errors: {}, message: null };
  * - "add": "+ Add run" in an experiment; pre-filled from the baseline, with only
  *   the declared variable (plus the per-run cost ceiling and concurrency)
  *   unlocked. The server enforces the same rule.
- * - "view": the experiment's shared settings, read-only.
  */
 export function RunForm({
   initial,
@@ -36,10 +35,10 @@ export function RunForm({
 }: {
   initial: RunConfig;
   fields: PickerField[];
-  mode?: "new" | "add" | "view";
+  mode?: "new" | "add";
   variables?: string[];
   action?: (prev: RunFormState, formData: FormData) => Promise<RunFormState>;
-  /** Shown instead of the analysis settings in "add" and "view" mode. */
+  /** Shown instead of the analysis settings in "add" mode. */
   analysisSummary?: ReactNode;
 }) {
   const [v, setV] = useState<Values>(initial);
@@ -47,7 +46,7 @@ export function RunForm({
   const err = (path: string) => state.errors[path];
   const unlocked = new Set<string>([...normalizeVariables(variables).flatMap(pathsFor), ...PER_RUN_SETTINGS]);
   /** True when this setting cannot be changed in this mode. */
-  const locked = (path: string) => mode === "view" || (mode === "add" && !unlocked.has(path));
+  const locked = (path: string) => mode === "add" && !unlocked.has(path);
 
   const set = <K extends keyof Values>(key: K, value: Values[K]) => setV((prev) => ({ ...prev, [key]: value }));
   const setA = (patch: Partial<Values["agentA"]>) => setV((p) => ({ ...p, agentA: { ...p.agentA, ...patch } }));
@@ -62,10 +61,7 @@ export function RunForm({
       <input type="hidden" name="config" value={JSON.stringify(payload)} />
 
       <Card>
-        <CardHeader
-          title="Name"
-          description={mode === "new" ? "Optional. Leave blank to name it after the models and turn count." : "The experiment's name."}
-        />
+        <CardHeader title="Name" info={mode === "new" ? "Optional. Leave blank to name it after the models and turn count." : undefined} />
         <CardBody>
           <Input
             id="name"
@@ -79,7 +75,7 @@ export function RunForm({
       </Card>
 
       <Card>
-        <CardHeader title="Agents" description="A speaks first and on every odd turn. B speaks on even turns." />
+        <CardHeader title="Agents" info="A speaks first and on every odd turn. B speaks on even turns." />
         <CardBody className="grid gap-6 md:grid-cols-2">
           {/* Agent A */}
           <fieldset className="flex flex-col gap-4">
@@ -314,7 +310,7 @@ export function RunForm({
             <Field
               label="Cost ceiling per run (USD)"
               htmlFor="cost-ceiling"
-              hint="Required. The run stops when it is reached."
+              hint="The run stops when it is reached."
               error={err("costCeilingUsd")}
             >
               <Input
@@ -336,7 +332,7 @@ export function RunForm({
       <Card>
         <CardHeader
           title="Analysis"
-          description="After the run, a judge model codes every conversation against the fields you tick, then a report writer summarizes the run."
+          info="After the run, a judge model codes every conversation against the fields you tick, then a report writer summarizes the run."
         />
         <CardBody className="flex flex-col gap-5">
           <Field
@@ -377,13 +373,13 @@ export function RunForm({
       </Card>
       ) : (
         <Card>
-          <CardHeader title="Analysis" description="Analysis settings belong to the experiment and apply to every run in it. Change them with Re-analyze." />
+          <CardHeader title="Analysis" info="Analysis settings belong to the experiment and apply to every run in it. Change them with Re-analyze." />
           <CardBody>{analysisSummary}</CardBody>
         </Card>
       )}
 
-      <div className={mode === "view" ? "hidden" : "flex items-center gap-4"}>
-        <Button type="submit" disabled={pending || mode === "view"}>
+      <div className="flex items-center gap-4">
+        <Button type="submit" disabled={pending}>
           {mode === "add" ? (pending ? "Saving…" : "Save draft") : pending ? "Starting…" : "Start run"}
         </Button>
         {state.message && !pending && (

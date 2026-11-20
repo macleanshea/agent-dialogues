@@ -76,6 +76,9 @@ export interface ExperimentListRow {
   variable: string;
   /** An experiment can be expanded unless it is a standalone run (one run, no declared variable). */
   expandable: boolean;
+  locked: boolean;
+  /** B's "same as A" in the shared settings, for the variable label. */
+  sameAsA: boolean;
   runCount: number;
   /** Status of the single run, or a summary across runs. */
   status: RunStatus | "mixed";
@@ -109,6 +112,8 @@ export async function listExperiments(db: Db): Promise<ExperimentListRow[]> {
       declaredVariables: e.declaredVariables,
       variable: variableLabel(e.declaredVariables, e.sharedSettings?.agentB.sameAsA ?? false),
       expandable: rs.length > 1 || e.declaredVariables.length > 0,
+      locked: e.locked,
+      sameAsA: e.sharedSettings?.agentB.sameAsA ?? false,
       runCount: rs.length,
       status: statuses.size === 1 ? rs[0].status : rs.length === 0 ? "draft" : "mixed",
       totalCostUsd: rs.reduce((s, r) => s + r.costUsd, 0),

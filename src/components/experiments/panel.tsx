@@ -6,7 +6,7 @@ import type { ActionState } from "@/app/experiments/[exp]/actions";
 import { StatusBadge } from "@/components/status";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Table, Td, Th, Tr } from "@/components/ui/table";
-import { addRunHref, comparisonHref, runHref, runId, sharedSettingsHref } from "@/lib/ids";
+import { addRunHref, comparisonHref, runHref, runId } from "@/lib/ids";
 import { formatUsd } from "@/lib/utils";
 
 export interface PanelRunView {
@@ -64,9 +64,6 @@ export function ExperimentPanel({
           <Button type="submit" variant="secondary" formAction={runAll} disabled={drafts.length === 0} formNoValidate>
             Run all{drafts.length ? ` (${drafts.length})` : ""}
           </Button>
-          <ButtonLink variant="secondary" href={sharedSettingsHref(exp)}>
-            Shared settings
-          </ButtonLink>
         </div>
       </div>
 
@@ -105,7 +102,7 @@ export function ExperimentPanel({
                     <Link href={runHref(exp, r.number)} className="hover:underline">
                       {runId(r.number)}
                     </Link>
-                    {r.number === 1 && <span className="ml-1.5 font-sans text-muted-foreground">baseline</span>}
+                    {r.number === 1 && <span className="ml-1.5 font-sans text-xs text-muted-foreground">baseline</span>}
                   </Td>
                   <Td className="max-w-80 truncate" title={r.variableValue}>
                     {r.variableValue}
@@ -146,9 +143,8 @@ export function ExperimentPanel({
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" variant="secondary" disabled={pending}>
-          {pending ? "Starting…" : "Compare ticked runs"}
+          {pending ? "Starting…" : "Compare"}
         </Button>
-        <span className="text-xs text-muted-foreground">Tick two or more finished runs. The writer sees them as Run X, Run Y, … with model names masked.</span>
         {state.message && !pending && (
           <p className="w-full text-sm text-destructive" role="alert">
             {state.message}

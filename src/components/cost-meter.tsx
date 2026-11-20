@@ -1,4 +1,3 @@
-import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { cn, formatNumber, formatUsd } from "@/lib/utils";
 
 export interface TokenTotals {
@@ -32,9 +31,7 @@ export function CostMeter({ costUsd, ceilingUsd, totals }: { costUsd: number; ce
   const pct = (x: number) => `${Math.round(x * 100)}%`;
 
   return (
-    <Card data-testid="cost-meter">
-      <CardHeader title="Cost" description="Checked against the ceiling before every model call." />
-      <CardBody className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 px-5 py-4" data-testid="cost-meter">
         <div>
           <div className="mb-1.5 flex items-baseline justify-between text-sm">
             <span>
@@ -66,7 +63,6 @@ export function CostMeter({ costUsd, ceilingUsd, totals }: { costUsd: number; ce
             testId="tokens-thinking"
           />
         </dl>
-      </CardBody>
-    </Card>
+    </div>
   );
 }

@@ -62,7 +62,7 @@ export function CodingView({ coding, defs, custom }: { coding: Coding | null; de
     <Card data-testid="coding">
       <CardHeader
         title="Coding"
-        description={`By ${modelLabel(coding.model)} acting as judge · ${formatUsd(coding.costUsd)}. Turn citations link to the transcript below.`}
+        description={`${modelLabel(coding.model)} · ${formatUsd(coding.costUsd)}`}
         actions={<StatusBadge status={coding.status} />}
       />
       <CardBody className="flex flex-col gap-5">

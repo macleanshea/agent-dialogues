@@ -9,14 +9,15 @@ import { Table, Td, Th, Tr } from "@/components/ui/table";
 import { getDb } from "@/lib/db";
 import { experimentIdsByNumber, getExperimentPanel } from "@/lib/experiments/service";
 import { variableValues } from "@/lib/experiments/variables";
-import { experimentId, parseOpenParam, runHref, toggleOpen } from "@/lib/ids";
+import { ExperimentButton } from "@/components/experiments/toggle";
+import { cloneHref, experimentId, parseOpenParam, runHref, toggleOpen } from "@/lib/ids";
 import { listExperiments } from "@/lib/runs/service";
 import { formatDateTime, formatUsd } from "@/lib/utils";
-import { compareAction, deleteDraftAction, runAllAction, startDraftAction } from "./experiments/[exp]/actions";
+import { compareAction, declareVariablesAction, deleteDraftAction, runAllAction, startDraftAction } from "./experiments/[exp]/actions";
 
 export const dynamic = "force-dynamic";
 
-const COLUMNS = 8;
+const COLUMNS = 9;
 
 export default async function HomePage({ searchParams }: PageProps<"/">) {
   const db = await getDb();
@@ -69,6 +70,9 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
                 <Th>Status</Th>
                 <Th className="text-right">Total cost</Th>
                 <Th>Last updated</Th>
+                <Th>
+                  <span className="sr-only">Actions</span>
+                </Th>
               </tr>
             </thead>
             <tbody>
@@ -80,11 +84,18 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
                 const panel = panels.get(r.number);
                 return (
                   <Fragment key={r.number}>
-                    <Tr data-testid="experiment-row" id={experimentId(r.number)} aria-expanded={r.expandable ? isOpen : undefined}>
-                      <Td className="text-muted-foreground">
+                    <Tr data-testid="experiment-row" className="[&>td]:align-middle" id={experimentId(r.number)} aria-expanded={r.expandable ? isOpen : undefined}>
+                      <Td className="py-1.5 align-middle">
                         {r.expandable && (
-                          <Link href={href!} aria-label={label} className="inline-block w-4 text-center hover:text-foreground" scroll={false}>
-                            {isOpen ? "▾" : "▸"}
+                          <Link
+                            href={href!}
+                            aria-label={label}
+                            scroll={false}
+                            className="-ml-1 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                          >
+                            <svg viewBox="0 0 20 20" aria-hidden fill="currentColor" className={`size-5 transition-transform ${isOpen ? "rotate-90" : ""}`}>
+                              <path d="M7 4.5v11l8-5.5z" />
+                            </svg>
                           </Link>
                         )}
                       </Td>
@@ -113,6 +124,20 @@ export default async function HomePage({ searchParams }: PageProps<"/">) {
                       </Td>
                       <Td className="text-right tabular-nums">{formatUsd(r.totalCostUsd)}</Td>
                       <Td className="whitespace-nowrap text-muted-foreground">{formatDateTime(r.updatedAt)}</Td>
+                      <Td className="py-1.5 align-middle">
+                        <div className="flex justify-end gap-2">
+                          <ExperimentButton
+                            exp={r.number}
+                            declared={r.declaredVariables}
+                            sameAsA={r.sameAsA}
+                            locked={r.locked}
+                            save={declareVariablesAction.bind(null, r.number)}
+                          />
+                          <ButtonLink variant="secondary" href={cloneHref(r.number)}>
+                            Clone
+                          </ButtonLink>
+                        </div>
+                      </Td>
                     </Tr>
                     {isOpen && panel && (
                       <tr>

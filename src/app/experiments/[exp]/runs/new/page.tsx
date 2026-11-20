@@ -3,6 +3,7 @@ import { RunForm } from "@/app/runs/new/run-form";
 import { AnalysisSummary } from "@/components/analysis-summary";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ButtonLink } from "@/components/ui/button";
+import { Info } from "@/components/ui/info";
 import { Card, CardBody } from "@/components/ui/card";
 import { listFieldLibrary } from "@/lib/analysis/service";
 import { getDb } from "@/lib/db";
@@ -38,21 +39,25 @@ export default async function AddRunPage({ params }: PageProps<"/experiments/[ex
             { label: "Add run" },
           ]}
         />
-        <h1 className="text-2xl font-semibold tracking-tight">Add a run to {experiment.name}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Add run: {experiment.name}</h1>
       </div>
       {experiment.declaredVariables.length === 0 ? (
         <Card>
           <CardBody className="flex flex-col items-start gap-3 text-sm">
-            <p>This experiment has no declared variable yet. Choose which setting may vary on the baseline run&apos;s page first.</p>
+            <p>No declared variable yet. Set one with the Experiment button.</p>
             <ButtonLink href={runHref(experiment.number, 1)}>Open R1</ButtonLink>
           </CardBody>
         </Card>
       ) : (
         <>
-          <p className="max-w-3xl text-sm text-muted-foreground" data-testid="add-run-intro">
-            Pre-filled from the baseline (R1). Only the declared variable, <strong className="text-foreground">{variable}</strong>, can be
-            changed, plus the cost ceiling and concurrency, which only affect how this run is executed. The run is saved as a draft; start it
-            from the experiment list.
+          <p className="flex items-center gap-2 text-sm" data-testid="add-run-intro">
+            <span>
+              <span className="text-muted-foreground">Varies:</span> <strong>{variable}</strong>
+            </span>
+            <Info>
+              Pre-filled from the baseline (R1). Only the declared variable can change, plus the cost ceiling and concurrency, which only
+              affect how this run is executed. The run is saved as a draft.
+            </Info>
           </p>
           <RunForm
             initial={formValuesFrom(baseline.config)}

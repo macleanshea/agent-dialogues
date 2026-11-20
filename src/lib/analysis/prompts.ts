@@ -6,7 +6,7 @@
  * version records the prompt versions it used.
  */
 
-export const PROMPT_VERSIONS = { summarizer: "v1", runReport: "v1", comparison: "v1" } as const;
+export const PROMPT_VERSIONS = { summarizer: "v1", runReport: "v2", comparison: "v2" } as const;
 
 /** The summarizer prompt, exactly as written in the spec. */
 export const SUMMARIZER_PROMPT = `You are coding one transcript of a conversation between two AI agents, labeled A and B. Other analysts are each coding one other conversation from the same run. A report writer will read every coding to find patterns and will open a full transcript only when a coding points there. Write for that reader.
@@ -102,9 +102,9 @@ Rules:
 7. Say once, near the start, that the codings were made by a Claude model acting as judge and may contain errors.
 8. Do not guess which model wrote which text beyond what the setup states.
 
-Write the report in Markdown with these sections, in order:
+Write the report in Markdown, at most 750 words in all, with these sections, in order. Be brief: lead with the most important findings, use short bullet points, and leave out anything the aggregates already show unless you add evidence or spread to it.
 ## Overview
-Three to five sentences.
+Two or three sentences.
 ## Analysis focus
 What bears on the analysis focus. Leave this section out if no focus was given.
 ## Patterns
@@ -182,9 +182,9 @@ Rules:
 8. Say once, near the start, that the codings were made by an AI model acting as judge and may contain errors, and that model names are masked.
 9. Each run is one sample of its setup. Describe differences between the runs; do not claim the declared variable caused them beyond what the data shows.
 
-Write the report in Markdown with these sections, in order:
+Write the report in Markdown, at most 1,000 words in all, with these sections, in order. Be brief: lead with the largest differences, use short bullet points, and do not repeat numbers already given unless you set them side by side.
 ## Overview
-Three to five sentences: which runs were compared, what the declared variable is, and the main differences, if any.
+Two or three sentences: which runs were compared, what the declared variable is, and the main differences, if any.
 ## Analysis focus
 How the runs compare on the analysis focus. Leave this section out if no focus was given.
 ## Differences

@@ -2,15 +2,52 @@
 
 import { useState, useTransition } from "react";
 import type { ActionState } from "@/app/experiments/[exp]/actions";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { DialogButton } from "@/components/ui/dialog";
 import { Toggle } from "@/components/ui/form";
+import { addRunHref } from "@/lib/ids";
 import { BOTH_MODELS, VARIABLES, hasUnrelatedVariables, normalizeVariables, variableLabel } from "@/lib/experiments/variables";
 
 /**
- * The run page's "Turn this run into an experiment" toggle: which setting or
- * settings may vary between runs. Saving an empty choice makes it a
- * standalone run again. Only shown while the experiment is unlocked.
+ * The "Experiment" button (run page header and main list rows) and its
+ * dialog: which setting may vary between runs, and "+ Add run". Once the
+ * experiment is locked it only shows the variable.
  */
+export function ExperimentButton({
+  exp,
+  declared,
+  sameAsA,
+  locked,
+  save,
+}: {
+  exp: number;
+  declared: string[];
+  sameAsA: boolean;
+  locked: boolean;
+  save: (keys: string[]) => Promise<ActionState>;
+}) {
+  return (
+    <DialogButton label="Experiment" title="Experiment" testId="experiment-dialog">
+      {locked ? (
+        <div className="flex flex-col gap-3 text-sm" data-testid="locked-note">
+          <p>
+            Variable: <strong>{variableLabel(declared, sameAsA)}</strong>
+          </p>
+          <p className="text-muted-foreground">Locked: the experiment has more than one run. Clone it to change the settings.</p>
+        </div>
+      ) : (
+        <ExperimentToggle declared={declared} sameAsA={sameAsA} save={save} />
+      )}
+      {declared.length > 0 && (
+        <div className="mt-4 flex justify-end border-t border-border pt-4">
+          <ButtonLink href={addRunHref(exp)}>+ Add run</ButtonLink>
+        </div>
+      )}
+    </DialogButton>
+  );
+}
+
+/** Which setting or settings may vary between runs. Saving an empty choice makes it a standalone run again. */
 export function ExperimentToggle({
   declared,
   sameAsA,
@@ -53,8 +90,8 @@ export function ExperimentToggle({
     <div className="flex flex-col gap-4" data-testid="experiment-toggle">
       <Toggle
         id="make-experiment"
-        label="Turn this run into an experiment"
-        hint="Choose which setting may vary between runs. Every other setting stays the same as this run (the baseline, R1)."
+        label="Make this an experiment"
+        hint="Choose which setting may vary between runs. Every other setting stays the same as the baseline (R1)."
         checked={on}
         onChange={(e) => {
           setMessage(null);
@@ -63,7 +100,7 @@ export function ExperimentToggle({
       />
       {on && (
         <fieldset className="flex flex-col gap-3 pl-6">
-          <legend className="mb-2 text-sm font-medium">Which setting may vary?</legend>
+          <legend className="mb-2 text-sm font-medium">Settings that vary</legend>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {options.map((o) => (
               <Toggle key={o.key} id={`var-${o.key}`} label={o.label} checked={o.checked} onChange={(e) => o.onChange(e.target.checked)} />
@@ -76,8 +113,7 @@ export function ExperimentToggle({
           )}
           {hasUnrelatedVariables(keys) && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200" role="alert" data-testid="unrelated-warning">
-              These settings are unrelated. If more than one of them changes between runs, a difference between the runs cannot be put down to
-              any one of them.
+              Unrelated settings: a difference between runs can&apos;t be attributed to any one of them.
             </p>
           )}
         </fieldset>
